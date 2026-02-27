@@ -126,6 +126,17 @@ ROOT_CAUSES = {
         "that the underlying supply was not a physical transaction (possible paper "
         "transaction for ITC generation without actual goods movement)."
     ),
+    "PAYMENT_OVERDUE_180_DAYS": (
+        "The buyer has not paid the supplier the invoice value (including GST) within "
+        "180 days of the invoice date. Under Section 16(2)(b) of the CGST Act 2017, "
+        "this triggers a mandatory ITC reversal. The 180-day clock starts from the "
+        "invoice date, not the date of delivery or receipt. "
+        "This is one of the four mandatory eligibility conditions for ITC under Section 16(2). "
+        "Common business reasons: extended credit terms (60-120 day credit periods), "
+        "cash flow constraints, disputed invoices, or buyer insolvency. "
+        "Regardless of the reason, GST law does not grant exceptions — ITC must be reversed "
+        "in GSTR-3B Table 4(B)(2) of the period in which the 180th day falls."
+    ),
 }
 
 # ─── Recommended Actions Library ─────────────────────────────
@@ -194,6 +205,18 @@ ACTIONS = {
         "ITC is not directly denied for missing EWB, but gaps in documentation "
         "increase scrutiny risk under Section 65/66 audit provisions.",
     ],
+    "PAYMENT_OVERDUE_180_DAYS": [
+        "IMMEDIATE: Reverse the full ITC amount in GSTR-3B Table 4(B)(2) of the "
+        "current return period. Do not defer — every additional day accrues interest.",
+        "Calculate interest at 18% p.a. from the date ITC was originally claimed "
+        "to today (Section 50(3) CGST Act). Include this interest in GSTR-3B.",
+        "Pay the supplier the full invoice amount (base value + GST) as soon as "
+        "possible. Once paid, the ITC becomes re-claimable in that month's GSTR-3B.",
+        "Document the payment (bank transfer / UTR number) as evidence for re-claim. "
+        "The re-claim entry goes into GSTR-3B Table 4(A)(5) — ITC from previous periods.",
+        "To prevent recurrence: implement a 150-day payment alert in your ERP system. "
+        "Add GST compliance clause in vendor contracts requiring payment within 90 days.",
+    ],
 }
 
 LEGAL_REFS = {
@@ -213,16 +236,23 @@ LEGAL_REFS = {
     "EWAYBILL_MISSING":    ["Rule 138 CGST Rules", "Rule 138A CGST Rules",
                             "Section 129 CGST Act — Detention & Seizure",
                             "Rule 138F — E-Way Bill non-generation penalty"],
+    "PAYMENT_OVERDUE_180_DAYS": [
+                            "Section 16(2)(b) CGST Act 2017 — 180-day payment condition",
+                            "Section 50(3) CGST Act — Interest on wrongly availed ITC",
+                            "Rule 37 CGST Rules — Reversal of ITC on non-payment",
+                            "GSTR-3B Table 4(B)(2) — ITC Reversal entry",
+                            "CBIC Circular No. 170/02/2022 — ITC conditions clarification"],
 }
 
 ADMISSIBILITY = {
-    "AMOUNT_MISMATCH":    "PARTIALLY AT RISK",
-    "INVOICE_MISSING_2B": "AT RISK — DEFER CLAIM",
-    "IRN_MISMATCH":       "INADMISSIBLE — REVERSE IMMEDIATELY",
-    "GSTIN_MISMATCH":     "INADMISSIBLE",
-    "DATE_MISMATCH":      "AT RISK — PERIOD CORRECTION REQUIRED",
-    "EXTRA_IN_2B":        "UNDER INVESTIGATION",
-    "EWAYBILL_MISSING":   "ITC ELIGIBLE BUT AUDIT RISK",
+    "AMOUNT_MISMATCH":          "PARTIALLY AT RISK",
+    "INVOICE_MISSING_2B":       "AT RISK — DEFER CLAIM",
+    "IRN_MISMATCH":             "INADMISSIBLE — REVERSE IMMEDIATELY",
+    "GSTIN_MISMATCH":           "INADMISSIBLE",
+    "DATE_MISMATCH":            "AT RISK — PERIOD CORRECTION REQUIRED",
+    "EXTRA_IN_2B":              "UNDER INVESTIGATION",
+    "EWAYBILL_MISSING":         "ITC ELIGIBLE BUT AUDIT RISK",
+    "PAYMENT_OVERDUE_180_DAYS": "INADMISSIBLE — REVERSE + PAY INTEREST (RE-CLAIMABLE ON PAYMENT)",
 }
 
 
@@ -319,6 +349,14 @@ class AuditTrailGenerator:
         elif mtype == "INVOICE_MISSING_2B":
             lines.append(f"  NOTE: ITC may be claimed in future period once invoice")
             lines.append(f"        appears in GSTR-2B (Section 16(2)(aa) compliance).")
+        elif mtype == "PAYMENT_OVERDUE_180_DAYS":
+            days_overdue = mismatch.get("days_overdue", 0)
+            interest     = mismatch.get("interest_liability", round(at_risk * 0.18 * (days_overdue / 365), 2))
+            lines.append(f"  Days Since Invoice   : {days_overdue} days (threshold: 180 days)")
+            lines.append(f"  Interest Liability   : {_inr(interest)} @ 18% p.a. (Section 50(3))")
+            lines.append(f"  Total Liability      : {_inr(at_risk + interest)}")
+            lines.append(f"  [WARN]  ITC is RE-CLAIMABLE once supplier payment is made.")
+            lines.append(f"      Re-claim in GSTR-3B Table 4(A)(5) of payment month.")
         lines.append("")
 
         # ── RECOMMENDED ACTIONS ─────────────────────────────

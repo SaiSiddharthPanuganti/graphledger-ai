@@ -289,6 +289,69 @@ def predict_all(top_n: int = Query(10, ge=1, le=50)):
     return _ok(result)
 
 
+# ═══════════════════════════════════════════════════════════════
+# DELIVERABLE — Section 16(2)(b) Payment Compliance
+# ═══════════════════════════════════════════════════════════════
+
+@app.get("/api/payment-compliance/{gstin}")
+def payment_compliance(
+    gstin: str,
+    as_of_date: Optional[str] = Query(None, description="Check date YYYY-MM-DD (default: today)"),
+):
+    """
+    Section 16(2)(b) CGST Act — 180-Day Payment Compliance Check.
+
+    Identifies:
+      - UNPAID invoices >180 days old → ITC reversal + interest required NOW
+      - Paid after 180 days → ITC was reversed; now re-claimable
+      - Approaching 180 days → Early warning (pay within N days)
+
+    Interest calculated at 18% p.a. (Section 50(3) CGST Act).
+    """
+    _check_gstin(gstin)
+    return _ok(kg.check_payment_compliance(gstin, as_of_date))
+
+
+@app.get("/api/payment-compliance/summary/all")
+def payment_compliance_summary():
+    """
+    Returns a summary of Section 16(2)(b) violations across ALL GSTINs.
+    Lists top offenders by ITC reversal required.
+    """
+    results = []
+    for tp in kg.taxpayers:
+        gstin = tp["gstin"]
+        try:
+            r = kg.check_payment_compliance(gstin)
+            if r["overdue_count"] > 0 or r["paid_late_count"] > 0:
+                results.append({
+                    "gstin":            gstin,
+                    "name":             tp["name"],
+                    "overdue_count":    r["overdue_count"],
+                    "paid_late_count":  r["paid_late_count"],
+                    "warning_count":    r["pending_warning_count"],
+                    "itc_reversal_required": r["total_itc_reversal_required"],
+                    "interest_liability":    r["total_interest_liability"],
+                    "total_exposure":        r["total_exposure"],
+                    "itc_re_claimable":      r["total_itc_re_claimable"],
+                })
+        except Exception:
+            continue
+
+    results.sort(key=lambda x: x["total_exposure"], reverse=True)
+    total_reversal = sum(r["itc_reversal_required"] for r in results)
+    total_interest = sum(r["interest_liability"]    for r in results)
+
+    return _ok({
+        "affected_gstins":        len(results),
+        "total_itc_reversal":     round(total_reversal, 2),
+        "total_interest":         round(total_interest, 2),
+        "total_exposure":         round(total_reversal + total_interest, 2),
+        "legal_basis":            "Section 16(2)(b) CGST Act 2017",
+        "top_offenders":          results[:20],
+    })
+
+
 # ── OCR Upload Router ─────────────────────────────────────────────
 from fastapi import UploadFile, File
 from ocr_engine import InvoiceOCREngine

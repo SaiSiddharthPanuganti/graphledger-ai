@@ -45,13 +45,14 @@ GST_RATES = [0, 5, 12, 18, 28]
 PERIODS = [f"{m:02d}2024" for m in range(1, 13)]  # 012024 to 122024
 
 MISMATCH_WEIGHTS = {
-    "AMOUNT_MISMATCH":    0.35,
-    "INVOICE_MISSING_2B": 0.25,
-    "EXTRA_IN_2B":        0.10,
-    "GSTIN_MISMATCH":     0.10,
-    "DATE_MISMATCH":      0.10,
-    "IRN_MISMATCH":       0.05,
-    "EWAYBILL_MISSING":   0.05,
+    "AMOUNT_MISMATCH":         0.30,
+    "INVOICE_MISSING_2B":      0.22,
+    "EXTRA_IN_2B":             0.09,
+    "GSTIN_MISMATCH":          0.09,
+    "DATE_MISMATCH":           0.09,
+    "IRN_MISMATCH":            0.05,
+    "EWAYBILL_MISSING":        0.05,
+    "PAYMENT_OVERDUE_180_DAYS": 0.11,   # ~11% of mismatches are 180-day payment violations
 }
 MISMATCH_TYPES = list(MISMATCH_WEIGHTS.keys())
 MISMATCH_PROBS = list(MISMATCH_WEIGHTS.values())
@@ -237,13 +238,14 @@ def generate_mismatches(invoices: list[dict], rate: float = 0.30) -> list[dict]:
     mtype_seq = random.choices(MISMATCH_TYPES, weights=MISMATCH_PROBS, k=n_mismatches)
 
     RISK_MAP = {
-        "AMOUNT_MISMATCH":    ("HIGH",     1.0),
-        "INVOICE_MISSING_2B": ("HIGH",     1.2),
-        "EXTRA_IN_2B":        ("MEDIUM",   0.5),
-        "GSTIN_MISMATCH":     ("HIGH",     1.3),
-        "DATE_MISMATCH":      ("MEDIUM",   0.8),
-        "IRN_MISMATCH":       ("CRITICAL", 1.5),
-        "EWAYBILL_MISSING":   ("MEDIUM",   0.6),
+        "AMOUNT_MISMATCH":         ("HIGH",     1.0),
+        "INVOICE_MISSING_2B":      ("HIGH",     1.2),
+        "EXTRA_IN_2B":             ("MEDIUM",   0.5),
+        "GSTIN_MISMATCH":          ("HIGH",     1.3),
+        "DATE_MISMATCH":           ("MEDIUM",   0.8),
+        "IRN_MISMATCH":            ("CRITICAL", 1.5),
+        "EWAYBILL_MISSING":        ("MEDIUM",   0.6),
+        "PAYMENT_OVERDUE_180_DAYS":("CRITICAL", 1.0),
     }
 
     ROOT_CAUSE_SHORT = {
@@ -254,6 +256,7 @@ def generate_mismatches(invoices: list[dict], rate: float = 0.30) -> list[dict]:
         "DATE_MISMATCH":      "Invoice booked in Period T; reported in Period T+1",
         "IRN_MISMATCH":       "IRN cryptographic validation failed — possible tampering",
         "EWAYBILL_MISSING":   "Consignment above ₹50,000 without E-Way Bill",
+        "PAYMENT_OVERDUE_180_DAYS": "Buyer has not paid supplier within 180 days of invoice date — Section 16(2)(b) ITC reversal triggered",
     }
 
     for i, (inv, mtype) in enumerate(zip(mismatch_invs, mtype_seq)):
@@ -358,7 +361,70 @@ def generate_vendor_risk_profiles(taxpayers: list[dict], mismatches: list[dict])
     return sorted(profiles, key=lambda x: x["composite_risk_score"], reverse=True)
 
 
-def generate_returns(taxpayers: list[dict], invoices: list[dict]) -> list[dict]:
+def generate_payments(invoices: list[dict]) -> list[dict]:
+    """
+    Generate buyer-to-supplier payment records for invoices.
+
+    Payment scenarios (reflecting real B2B credit market):
+      40% — Paid on time (within 60 days): ITC safe
+      25% — Paid late but within 180 days (60–180 days): ITC safe but slow
+      20% — Paid AFTER 180 days: ITC was valid but must be reversed, then re-claimed
+      15% — UNPAID (still outstanding): ITC reversal mandatory if 180 days have passed
+
+    Section 16(2)(b) CGST Act:
+      ITC reversal triggered when payment (value + tax) not made within 180 days.
+      Interest at 18% p.a. accrues from date of original ITC claim.
+      ITC re-claimable once payment is eventually made.
+    """
+    payments = []
+    PAYMENT_MODES = ["NEFT", "RTGS", "CHEQUE", "UPI", "IMPS"]
+
+    for inv in invoices:
+        inv_date = datetime.strptime(inv["invoice_date"], "%Y-%m-%d")
+        total_value = inv["total_value"]
+        gst_value = inv["igst"] + inv["cgst"] + inv["sgst"]
+
+        # Scenario weights: on_time, late_within_180, after_180, unpaid
+        scenario = random.choices(
+            ["on_time", "late_within_180", "after_180", "unpaid"],
+            weights=[40, 25, 20, 15]
+        )[0]
+
+        if scenario == "unpaid":
+            # No payment record — if invoice > 180 days old, ITC reversal required
+            continue  # Absence of payment node signals the violation
+
+        if scenario == "on_time":
+            delay_days = random.randint(7, 60)
+        elif scenario == "late_within_180":
+            delay_days = random.randint(61, 179)
+        else:  # after_180
+            delay_days = random.randint(181, 365)
+
+        pay_date = inv_date + timedelta(days=delay_days)
+
+        payments.append({
+            "payment_id":        f"PAY-{inv['invoice_id']}",
+            "invoice_id":        inv["invoice_id"],
+            "invoice_no":        inv["invoice_no"],
+            "buyer_gstin":       inv["buyer_gstin"],
+            "supplier_gstin":    inv["supplier_gstin"],
+            "invoice_date":      inv["invoice_date"],
+            "payment_date":      pay_date.strftime("%Y-%m-%d"),
+            "amount_paid":       round(total_value, 2),
+            "base_paid":         round(inv["taxable_value"], 2),
+            "gst_paid":          round(gst_value, 2),
+            "payment_mode":      random.choice(PAYMENT_MODES),
+            "bank_ref":          f"UTR{random.randint(10**11, 10**12 - 1)}",
+            "days_from_invoice": delay_days,
+            "is_overdue":        delay_days > 180,
+            "scenario":          scenario,
+        })
+
+    return payments
+
+
+
     """Generate GSTR-1, GSTR-2B, GSTR-3B entries per taxpayer per period."""
     returns = []
     inv_by_supplier: dict = {}
@@ -411,6 +477,7 @@ def generate_all() -> dict:
     mismatches  = generate_mismatches(invoices, 0.30)
     vendors     = generate_vendor_risk_profiles(taxpayers, mismatches)
     returns_    = generate_returns(taxpayers, invoices)
+    payments    = generate_payments(invoices)
 
     data = {
         "taxpayers":  taxpayers,
@@ -418,6 +485,7 @@ def generate_all() -> dict:
         "mismatches": mismatches,
         "vendors":    vendors,
         "returns":    returns_,
+        "payments":   payments,
     }
 
     for key, records in data.items():
@@ -427,11 +495,16 @@ def generate_all() -> dict:
         print(f"  [OK] {path.name}: {len(records)} records")
 
     print(f"\n[Summary]")
-    print(f"  Taxpayers   : {len(taxpayers)}")
-    print(f"  Invoices    : {len(invoices)}")
-    print(f"  Mismatches  : {len(mismatches)} ({len(mismatches)/len(invoices)*100:.1f}% rate)")
+    print(f"  Taxpayers      : {len(taxpayers)}")
+    print(f"  Invoices       : {len(invoices)}")
+    print(f"  Mismatches     : {len(mismatches)} ({len(mismatches)/len(invoices)*100:.1f}% rate)")
     print(f"  Vendor Profiles: {len(vendors)}")
-    print(f"  Returns     : {len(returns_)}")
+    print(f"  Returns        : {len(returns_)}")
+    print(f"  Payments       : {len(payments)} ({len(payments)/len(invoices)*100:.1f}% invoices paid)")
+    overdue = sum(1 for p in payments if p["is_overdue"])
+    unpaid  = len(invoices) - len(payments)
+    print(f"  Overdue (>180d): {overdue}")
+    print(f"  Unpaid         : {unpaid}")
 
     type_dist = {}
     for m in mismatches:
@@ -439,7 +512,7 @@ def generate_all() -> dict:
     print(f"\n[Mismatch Distribution]")
     for mtype, cnt in sorted(type_dist.items(), key=lambda x: -x[1]):
         pct = cnt / len(mismatches) * 100
-        print(f"  {mtype:<25} {cnt:>4} ({pct:5.1f}%)")
+        print(f"  {mtype:<30} {cnt:>4} ({pct:5.1f}%)")
 
     return data
 

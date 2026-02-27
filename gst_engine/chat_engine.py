@@ -185,12 +185,20 @@ def execute_tool(tool_name: str, args: dict, kg, predictor) -> str:
     """
     try:
         if tool_name == "get_dashboard_summary":
+            from datetime import date, datetime
             mis = kg.mismatches
             total_risk = sum(m["amount_at_risk"] for m in mis)
             by_level = {}
             for m in mis:
                 lvl = m["risk_level"]
                 by_level[lvl] = by_level.get(lvl, 0) + 1
+            overdue_invoices = [
+                inv for inv in kg.invoices
+                if inv["invoice_id"] not in kg._pay_by_inv
+                and (date.today() - datetime.strptime(inv["invoice_date"], "%Y-%m-%d").date()).days > 180
+                and (inv["igst"] + inv["cgst"] + inv["sgst"]) > 0
+            ]
+            overdue_itc = sum(i["igst"] + i["cgst"] + i["sgst"] for i in overdue_invoices)
             return json.dumps({
                 "total_invoices": len(kg.invoices),
                 "total_mismatches": len(mis),
@@ -199,11 +207,12 @@ def execute_tool(tool_name: str, args: dict, kg, predictor) -> str:
                 "match_rate_pct": round((1 - len(mis) / max(len(kg.invoices), 1)) * 100, 1),
                 "by_risk_level": by_level,
                 "vendors_count": len(kg.vendors),
-                # compliance_score is 0–100; flag vendors with score < 40
                 "critical_vendors": sum(
                     1 for v in kg.vendors
                     if v.get("compliance_score", 100) < 40
                 ),
+                "payment_overdue_180d_count": len(overdue_invoices),
+                "payment_overdue_itc_lakh": round(overdue_itc / 100000, 2),
             })
 
         elif tool_name == "get_high_risk_invoices":

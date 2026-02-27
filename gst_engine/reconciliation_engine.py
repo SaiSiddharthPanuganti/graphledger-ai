@@ -24,6 +24,7 @@ import json
 import networkx as nx
 from pathlib import Path
 from collections import defaultdict, deque
+from datetime import date, datetime, timedelta
 from typing import Optional
 
 from schema import MISMATCH_TAXONOMY
@@ -55,6 +56,7 @@ class GSTKnowledgeGraph:
         self.mismatches: list      = []
         self.vendors:    list      = []
         self.returns:    list      = []
+        self.payments:   list      = []
 
         # Lookup indexes (for O(1) access)
         self._gstin_to_tp:   dict  = {}  # gstin → taxpayer dict
@@ -63,6 +65,7 @@ class GSTKnowledgeGraph:
         self._inv_by_buyer:  dict  = defaultdict(list)  # (buyer_gstin, period) → invoices
         self._inv_by_sup:    dict  = defaultdict(list)  # (supplier_gstin, period) → invoices
         self._mis_by_inv:    dict  = defaultdict(list)  # invoice_id → mismatches
+        self._pay_by_inv:    dict  = {}  # invoice_id → payment dict (single payment per invoice)
 
     # ──────────────────────────────────────────────────────────
     # DATA LOADING
@@ -79,6 +82,7 @@ class GSTKnowledgeGraph:
             "mismatches": "mismatches.json",
             "vendors":    "vendors.json",
             "returns":    "returns.json",
+            "payments":   "payments.json",
         }
         for attr, fname in files.items():
             path = DATA_DIR / fname
@@ -106,6 +110,9 @@ class GSTKnowledgeGraph:
         for m in self.mismatches:
             self._mis_index[m["mismatch_id"]] = m
             self._mis_by_inv[m["invoice_id"]].append(m)
+
+        for pay in self.payments:
+            self._pay_by_inv[pay["invoice_id"]] = pay
 
     def _build_graph(self):
         """
@@ -204,6 +211,22 @@ class GSTKnowledgeGraph:
                     if self.G.has_edge(sup_g, buy_g):
                         self.G[sup_g][buy_g]["risk_flag"] = True
 
+        # ── SupplierPayment nodes ──────────────────────────
+        # Models Section 16(2)(b): buyer-to-supplier payment tracking.
+        # Absence of a PAID_BY edge after 180 days = ITC reversal required.
+        today = date.today()
+        for pay in self.payments:
+            pay_id = f"pay_{pay['payment_id']}"
+            self.G.add_node(pay_id, type="SupplierPayment", **pay)
+            inv_id = f"inv_{pay['invoice_id']}"
+            if self.G.has_node(inv_id):
+                self.G.add_edge(
+                    inv_id, pay_id,
+                    type="PAID_BY",
+                    days_from_invoice=pay["days_from_invoice"],
+                    is_overdue=pay["is_overdue"],
+                )
+
     # ──────────────────────────────────────────────────────────
     # RECONCILIATION ENGINE
     # ──────────────────────────────────────────────────────────
@@ -236,6 +259,7 @@ class GSTKnowledgeGraph:
         total_itc    = 0.0
         matched_itc  = 0.0
         matched_count= 0
+        today        = date.today()
 
         for inv in pr_invoices:
             inv_mismatches = self._mis_by_inv.get(inv["invoice_id"], [])
@@ -243,6 +267,55 @@ class GSTKnowledgeGraph:
             has_mismatch   = len(inv_mismatches) > 0
             itc_value      = inv["igst"] + inv["cgst"] + inv["sgst"]
             total_itc     += itc_value
+
+            # ── Section 16(2)(b): 180-day payment check ──────────────────
+            inv_date  = datetime.strptime(inv["invoice_date"], "%Y-%m-%d").date()
+            days_old  = (today - inv_date).days
+            payment   = self._pay_by_inv.get(inv["invoice_id"])
+
+            payment_status = "PAID"
+            payment_days   = None
+            itc_reversal_due = False
+
+            if payment is None:
+                # No payment at all
+                payment_status   = "UNPAID"
+                payment_days     = days_old
+                if days_old > 180:
+                    itc_reversal_due = True
+            elif payment["is_overdue"]:
+                # Paid but after 180 days — ITC was reversed, now re-claimable
+                payment_status   = "PAID_AFTER_180_DAYS"
+                payment_days     = payment["days_from_invoice"]
+            else:
+                payment_days = payment["days_from_invoice"]
+
+            # Inject PAYMENT_OVERDUE_180_DAYS as a synthetic mismatch if triggered
+            if itc_reversal_due and not any(
+                m["mismatch_type"] == "PAYMENT_OVERDUE_180_DAYS" for m in inv_mismatches
+            ):
+                interest = round(itc_value * 0.18 * (days_old / 365), 2)
+                synthetic_mis = {
+                    "mismatch_id":   f"SYN-PAY-{inv['invoice_id']}",
+                    "mismatch_type": "PAYMENT_OVERDUE_180_DAYS",
+                    "invoice_id":    inv["invoice_id"],
+                    "invoice_no":    inv["invoice_no"],
+                    "supplier_gstin":inv["supplier_gstin"],
+                    "buyer_gstin":   inv["buyer_gstin"],
+                    "return_period": inv["return_period"],
+                    "detected_date": today.strftime("%Y-%m-%d"),
+                    "gstr1_value":   inv["taxable_value"],
+                    "gstr2b_value":  inv["taxable_value"],
+                    "amount_at_risk":itc_value,
+                    "interest_liability": interest,
+                    "days_overdue":  days_old,
+                    "risk_level":    "CRITICAL",
+                    "root_cause":    f"Invoice unpaid for {days_old} days (threshold: 180). ITC reversal + ₹{interest:,.0f} interest liability.",
+                    "resolution_status": "PENDING",
+                }
+                inv_mismatches = list(inv_mismatches) + [synthetic_mis]
+                has_mismatch   = True
+            # ── end 180-day check ─────────────────────────────────────────
 
             if not has_mismatch:
                 matched_count += 1
@@ -272,6 +345,10 @@ class GSTKnowledgeGraph:
                 "risk_level":    risk_level,
                 "at_risk":       round(at_risk, 2),
                 "mismatches":    inv_mismatches,
+                # Payment tracking fields (Section 16(2)(b))
+                "payment_status":  payment_status,
+                "payment_days":    payment_days,
+                "itc_reversal_due":itc_reversal_due,
             })
 
         total_at_risk = sum(c["at_risk"] for c in classified)
@@ -289,6 +366,127 @@ class GSTKnowledgeGraph:
             "total_itc_pool":      round(total_itc, 2),
             "total_itc_at_risk":   round(total_at_risk, 2),
             "classified_mismatches": classified,
+        }
+
+    def check_payment_compliance(self, gstin: str, as_of_date: Optional[str] = None) -> dict:
+        """
+        Section 16(2)(b) CGST Act — 180-Day Payment Compliance Check.
+
+        Scans ALL invoices where this GSTIN is the BUYER and checks:
+          1. UNPAID invoices older than 180 days → ITC must be reversed NOW
+          2. PAID AFTER 180 DAYS → ITC was to be reversed; re-claimable now
+          3. PAID WITHIN 180 DAYS → Safe, no action needed
+          4. PENDING (< 180 days, unpaid) → Countdown warning
+
+        Returns:
+          - overdue_list: invoices requiring immediate ITC reversal
+          - paid_late_list: paid after 180 days (ITC was reversed; now re-claimable)
+          - pending_list: approaching the 180-day threshold (warning)
+          - total_reversal_required: sum of ITC to reverse today
+          - total_interest: 18% p.a. interest on overdue amounts
+        """
+        check_date = (
+            datetime.strptime(as_of_date, "%Y-%m-%d").date()
+            if as_of_date
+            else date.today()
+        )
+
+        overdue_list  = []
+        paid_late_list= []
+        pending_list  = []
+        safe_count    = 0
+
+        # Get all invoices where this GSTIN is the BUYER
+        buyer_invoices = [
+            inv for inv in self.invoices
+            if inv["buyer_gstin"] == gstin
+        ]
+
+        for inv in buyer_invoices:
+            itc_value = inv["igst"] + inv["cgst"] + inv["sgst"]
+            if itc_value == 0:
+                continue  # No ITC on zero-tax invoices
+
+            inv_date  = datetime.strptime(inv["invoice_date"], "%Y-%m-%d").date()
+            days_old  = (check_date - inv_date).days
+            payment   = self._pay_by_inv.get(inv["invoice_id"])
+
+            base_info = {
+                "invoice_id":    inv["invoice_id"],
+                "invoice_no":    inv["invoice_no"],
+                "invoice_date":  inv["invoice_date"],
+                "supplier_gstin":inv["supplier_gstin"],
+                "supplier_name": inv["supplier_name"],
+                "taxable_value": inv["taxable_value"],
+                "itc_value":     round(itc_value, 2),
+                "days_old":      days_old,
+            }
+
+            if payment is None:
+                if days_old > 180:
+                    # CRITICAL: ITC must be reversed
+                    interest = round(itc_value * 0.18 * (days_old / 365), 2)
+                    overdue_list.append({
+                        **base_info,
+                        "status":             "UNPAID_OVERDUE",
+                        "days_overdue":       days_old - 180,
+                        "itc_to_reverse":     round(itc_value, 2),
+                        "interest_liability": interest,
+                        "total_liability":    round(itc_value + interest, 2),
+                        "legal_ref":          "Section 16(2)(b) CGST Act",
+                        "action":             "Reverse ITC in GSTR-3B Table 4(B)(2) immediately",
+                    })
+                elif days_old > 150:
+                    # WARNING: Approaching 180-day threshold
+                    days_left = 180 - days_old
+                    pending_list.append({
+                        **base_info,
+                        "status":      "PAYMENT_PENDING_WARNING",
+                        "days_left":   days_left,
+                        "itc_at_risk": round(itc_value, 2),
+                        "action":      f"Pay supplier within {days_left} days to retain ITC",
+                    })
+                else:
+                    safe_count += 1
+            elif payment["is_overdue"]:
+                # Paid after 180 days — ITC was reversed, now re-claimable
+                pay_date    = datetime.strptime(payment["payment_date"], "%Y-%m-%d").date()
+                reversal_days = payment["days_from_invoice"] - 180
+                interest    = round(itc_value * 0.18 * (reversal_days / 365), 2)
+                paid_late_list.append({
+                    **base_info,
+                    "status":             "PAID_AFTER_180_DAYS",
+                    "payment_date":       payment["payment_date"],
+                    "days_from_invoice":  payment["days_from_invoice"],
+                    "reversal_period_days": reversal_days,
+                    "interest_paid":      interest,
+                    "itc_re_claimable":   round(itc_value, 2),
+                    "action":             f"Re-claim ITC in GSTR-3B for period {pay_date.strftime('%m%Y')}",
+                })
+            else:
+                safe_count += 1
+
+        total_reversal = sum(i["itc_to_reverse"] for i in overdue_list)
+        total_interest = sum(i["interest_liability"] for i in overdue_list)
+        total_reclaim  = sum(i["itc_re_claimable"] for i in paid_late_list)
+
+        return {
+            "gstin":                 gstin,
+            "as_of_date":            check_date.strftime("%Y-%m-%d"),
+            "total_invoices_checked":len(buyer_invoices),
+            "safe_count":            safe_count,
+            "overdue_count":         len(overdue_list),
+            "paid_late_count":       len(paid_late_list),
+            "pending_warning_count": len(pending_list),
+            "total_itc_reversal_required": round(total_reversal, 2),
+            "total_interest_liability":    round(total_interest, 2),
+            "total_exposure":              round(total_reversal + total_interest, 2),
+            "total_itc_re_claimable":      round(total_reclaim, 2),
+            "overdue_invoices":    sorted(overdue_list,  key=lambda x: x["itc_to_reverse"], reverse=True),
+            "paid_late_invoices":  sorted(paid_late_list,key=lambda x: x["itc_re_claimable"], reverse=True),
+            "pending_warnings":    sorted(pending_list,  key=lambda x: x["days_left"]),
+            "legal_basis":         "Section 16(2)(b) CGST Act 2017",
+            "interest_rate":       "18% per annum (Section 50(3) CGST Act)",
         }
 
     def validate_itc_chain(self, gstin: str, max_hops: int = 4) -> dict:

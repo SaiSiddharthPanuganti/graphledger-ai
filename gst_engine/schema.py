@@ -136,6 +136,27 @@ class TaxPaymentNode(TypedDict):
     mode:           str               # ONLINE / OFFLINE
 
 
+class SupplierPaymentNode(TypedDict):
+    """
+    Buyer-to-Supplier Payment — tracks when the BUYER actually paid
+    the supplier for the invoice (Section 16(2)(b) CGST Act).
+
+    GST Rule: ITC must be reversed if supplier is not paid within
+    180 days of invoice date. Payment can be full or partial.
+    ITC is re-claimable once payment is eventually made.
+    """
+    payment_id:      str              # Unique payment reference
+    invoice_id:      str              # Linked invoice
+    payment_date:    str              # ISO date of actual payment
+    amount_paid:     float            # Total amount paid (including GST)
+    base_paid:       float            # Base value paid
+    gst_paid:        float            # GST component paid
+    payment_mode:    str              # NEFT / RTGS / CHEQUE / CASH / UPI
+    bank_ref:        str              # Bank reference / UTR number
+    days_from_invoice: int            # payment_date - invoice_date in days
+    is_overdue:      bool             # True if paid after 180 days
+
+
 class MismatchEventNode(TypedDict):
     """
     Reconciliation mismatch — a discrepancy between GSTR-1 and GSTR-2B.
@@ -218,6 +239,16 @@ EDGE_SCHEMA: Dict[str, Dict[str, Any]] = {
         "description": "Business relationship between two GSTINs (supply chain link)",
         "cardinality": "N:M",
         "note":        "Circular patterns in this relationship indicate potential fraud",
+    },
+    "PAID_BY": {
+        "source":      "Invoice",
+        "target":      "SupplierPayment",
+        "properties":  ["days_from_invoice", "is_overdue"],
+        "description": (
+            "Buyer paid the supplier for this invoice. "
+            "If absent after 180 days → ITC reversal mandatory under Section 16(2)(b)."
+        ),
+        "cardinality": "1:1",
     },
 }
 
@@ -320,6 +351,25 @@ MISMATCH_TAXONOMY: Dict[str, Dict[str, Any]] = {
         "legal_reference":  "Rule 138 CGST Rules — E-Way Bill mandate",
         "resolution":       "Generate EWB retroactively if possible; document transit records",
     },
+    "PAYMENT_OVERDUE_180_DAYS": {
+        "subtypes":         ["UNPAID", "PARTIALLY_PAID", "PAID_AFTER_180_DAYS"],
+        "risk_level":       "CRITICAL",
+        "itc_impact":       True,
+        "itc_risk_multiplier": 1.0,
+        "description":      (
+            "Buyer has not paid the supplier within 180 days of the invoice date. "
+            "Section 16(2)(b) CGST Act mandates that ITC must be REVERSED in GSTR-3B "
+            "if payment (value + tax) is not made within 180 days. "
+            "Interest at 18% p.a. applies from the date ITC was originally claimed. "
+            "ITC can be re-claimed once payment is eventually made."
+        ),
+        "legal_reference":  "Section 16(2)(b) CGST Act 2017",
+        "resolution":       (
+            "Immediately reverse ITC in current GSTR-3B Table 4(B)(2). "
+            "Pay interest at 18% p.a. from date of original ITC claim. "
+            "Re-claim ITC in the period when payment is eventually made."
+        ),
+    },
 }
 
 
@@ -328,14 +378,15 @@ MISMATCH_TAXONOMY: Dict[str, Dict[str, Any]] = {
 # ═══════════════════════════════════════════════════════════════
 
 NODE_TYPES = {
-    "Taxpayer":      TaxpayerNode,
-    "GSTIN":         GSTINNode,
-    "Invoice":       InvoiceNode,
-    "IRN":           IRNNode,
-    "Return":        ReturnNode,
-    "EWayBill":      EWayBillNode,
-    "TaxPayment":    TaxPaymentNode,
-    "MismatchEvent": MismatchEventNode,
+    "Taxpayer":         TaxpayerNode,
+    "GSTIN":            GSTINNode,
+    "Invoice":          InvoiceNode,
+    "IRN":              IRNNode,
+    "Return":           ReturnNode,
+    "EWayBill":         EWayBillNode,
+    "TaxPayment":       TaxPaymentNode,
+    "SupplierPayment":  SupplierPaymentNode,
+    "MismatchEvent":    MismatchEventNode,
 }
 
 SCHEMA_VERSION = "1.0.0"

@@ -6,4 +6,4 @@ export const riskBadge = r => `badge badge-${r.toLowerCase()}`;
 
 export const statusBadge = s => `badge ${s==='RESOLVED'?'badge-resolved':s==='IN_PROGRESS'?'badge-progress':'badge-pending'}`;
 
-export const mismatchIcon = t => ({IRN_MISMATCH:'⚠️',AMOUNT_MISMATCH:'💰',INVOICE_MISSING_2B:'📭',EXTRA_IN_2B:'📬',GSTIN_MISMATCH:'🆔',DATE_MISMATCH:'📅',EWAYBILL_MISSING:'🚚'}[t]||'❓');
+export const mismatchIcon = t => ({IRN_MISMATCH:'⚠️',AMOUNT_MISMATCH:'💰',INVOICE_MISSING_2B:'📭',EXTRA_IN_2B:'📬',GSTIN_MISMATCH:'🆔',DATE_MISMATCH:'📅',EWAYBILL_MISSING:'🚚',PAYMENT_OVERDUE_180_DAYS:'⏱'}[t]||'❓');

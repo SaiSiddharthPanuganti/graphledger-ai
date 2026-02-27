@@ -38,7 +38,10 @@ export const MISMATCHES = [
   {id:"MIS-037",invoice_no:"INV-0889",supplier_gstin:"33AAECS3456J1Z1",buyer_gstin:"29AADCV5678B1ZP",mismatch_type:"DATE_MISMATCH",gstr1_value:134000,gstr2b_value:134000,itc_at_risk:24120,period:"072023",risk_level:"MEDIUM",status:"RESOLVED",root_cause:"Advance payment invoice vs supply invoice period mismatch"},
   {id:"MIS-038",invoice_no:"INV-0912",supplier_gstin:"27AABCM1234F1Z5",buyer_gstin:"29AADCV5678B1ZP",mismatch_type:"AMOUNT_MISMATCH",gstr1_value:920000,gstr2b_value:875000,itc_at_risk:8100,period:"062023",risk_level:"HIGH",status:"PENDING",root_cause:"Service charge taxable component disputed"},
   {id:"MIS-039",invoice_no:"INV-0934",supplier_gstin:"24AAACG8765H1Z7",buyer_gstin:"27AABCM1234F1Z5",mismatch_type:"EWAYBILL_MISSING",gstr1_value:695000,gstr2b_value:695000,itc_at_risk:125100,period:"052023",risk_level:"CRITICAL",status:"PENDING",root_cause:"Multi-modal transport EWB not updated at handoff"},
-  {id:"MIS-040",invoice_no:"INV-0956",supplier_gstin:"09AAACJ6543M1Z9",buyer_gstin:"29AADCV5678B1ZP",mismatch_type:"INVOICE_MISSING_2B",gstr1_value:223000,gstr2b_value:0,itc_at_risk:40140,period:"042023",risk_level:"HIGH",status:"IN_PROGRESS",root_cause:"Supplier under GST audit — all filings frozen"}
+  {id:"MIS-040",invoice_no:"INV-0956",supplier_gstin:"09AAACJ6543M1Z9",buyer_gstin:"29AADCV5678B1ZP",mismatch_type:"INVOICE_MISSING_2B",gstr1_value:223000,gstr2b_value:0,itc_at_risk:40140,period:"042023",risk_level:"HIGH",status:"IN_PROGRESS",root_cause:"Supplier under GST audit — all filings frozen"},
+  {id:"MIS-041",invoice_no:"INV-1101",supplier_gstin:"27AABCM1234F1Z5",buyer_gstin:"29AADCV5678B1ZP",mismatch_type:"PAYMENT_OVERDUE_180_DAYS",gstr1_value:540000,gstr2b_value:540000,itc_at_risk:97200,period:"082023",risk_level:"CRITICAL",status:"PENDING",root_cause:"Invoice unpaid for 215 days — ITC reversal mandatory under Sec 16(2)(b)"},
+  {id:"MIS-042",invoice_no:"INV-1145",supplier_gstin:"07AAFCS9876K1Z3",buyer_gstin:"29AADCV5678B1ZP",mismatch_type:"PAYMENT_OVERDUE_180_DAYS",gstr1_value:312000,gstr2b_value:312000,itc_at_risk:56160,period:"092023",risk_level:"CRITICAL",status:"PENDING",root_cause:"Invoice unpaid for 198 days — ITC reversal mandatory under Sec 16(2)(b)"},
+  {id:"MIS-043",invoice_no:"INV-1187",supplier_gstin:"24AAACG8765H1Z7",buyer_gstin:"29AADCV5678B1ZP",mismatch_type:"PAYMENT_OVERDUE_180_DAYS",gstr1_value:175000,gstr2b_value:175000,itc_at_risk:31500,period:"102023",risk_level:"HIGH",status:"PENDING",root_cause:"Paid after 195 days — late; ITC reversal + interest required"}
 ];
 
 export const VENDORS = [
@@ -59,7 +62,17 @@ export const MISMATCH_TYPE_BREAKDOWN = [
   {type:"GSTIN_MISMATCH",count:15,itc_at_risk:121500,risk_level:"HIGH"},
   {type:"DATE_MISMATCH",count:15,itc_at_risk:67500,risk_level:"MEDIUM"},
   {type:"IRN_MISMATCH",count:7,itc_at_risk:380700,risk_level:"CRITICAL"},
-  {type:"EWAYBILL_MISSING",count:8,itc_at_risk:289600,risk_level:"CRITICAL"}
+  {type:"EWAYBILL_MISSING",count:8,itc_at_risk:289600,risk_level:"CRITICAL"},
+  {type:"PAYMENT_OVERDUE_180_DAYS",count:9,itc_at_risk:184860,risk_level:"CRITICAL"}
+];
+
+// Section 16(2)(b) CGST Act — 180-Day Payment Compliance data
+export const PAYMENT_OVERDUE = [
+  {invoice_id:"pay-1101",invoice_no:"INV-1101",supplier_name:"Mahindra Castings Pvt Ltd",supplier_gstin:"27AABCM1234F1Z5",invoice_date:"2024-01-15",days_old:215,itc_value:97200,interest_liability:10422,payment_status:"UNPAID_OVERDUE",days_left:0,action:"Reverse ITC in GSTR-3B Table 4(B)(2) immediately"},
+  {invoice_id:"pay-1145",invoice_no:"INV-1145",supplier_name:"Flex Systems India",supplier_gstin:"07AAFCS9876K1Z3",invoice_date:"2024-02-01",days_old:198,itc_value:56160,interest_liability:5521,payment_status:"UNPAID_OVERDUE",days_left:0,action:"Reverse ITC in GSTR-3B Table 4(B)(2) immediately"},
+  {invoice_id:"pay-1187",invoice_no:"INV-1187",supplier_name:"Gujarat Agro Chemicals",supplier_gstin:"24AAACG8765H1Z7",invoice_date:"2024-02-20",days_old:179,itc_value:31500,interest_liability:2790,payment_status:"UNPAID_OVERDUE",days_left:0,action:"Reverse ITC — paid after 195 days, interest due under Sec 50(3)"},
+  {invoice_id:"pay-1203",invoice_no:"INV-1203",supplier_name:"Chennai Electrical Co",supplier_gstin:"33AAECS3456J1Z1",invoice_date:"2024-03-10",days_old:158,itc_value:44100,interest_liability:0,payment_status:"PAYMENT_PENDING",days_left:22,action:"Pay within 22 days to retain ITC ₹44,100"},
+  {invoice_id:"pay-1218",invoice_no:"INV-1218",supplier_name:"Jain Logistics UP",supplier_gstin:"09AAACJ6543M1Z9",invoice_date:"2024-03-22",days_old:146,itc_value:28800,interest_liability:0,payment_status:"PAYMENT_PENDING",days_left:34,action:"Pay within 34 days to retain ITC ₹28,800"},
 ];
 
 export const GRAPH_NODES = [
