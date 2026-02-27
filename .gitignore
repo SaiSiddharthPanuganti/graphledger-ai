@@ -1,0 +1,5 @@
+
+# secrets
+gst_engine/.env
+**/__pycache__/
+**/*.pyc

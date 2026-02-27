@@ -1,0 +1,998 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1.0"/>
+<title>GraphLedger AI — Live Graph Traversal</title>
+<link href="https://fonts.googleapis.com/css2?family=Sora:wght@400;600;700&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet"/>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/d3/7.8.5/d3.min.js"></script>
+<style>
+:root{
+  --bg:#0a0e1a;
+  --panel:#0f1629;
+  --border:#1e2d4a;
+  --amber:#f59e0b;
+  --amber2:#fde68a;
+  --critical:#ef4444;
+  --high:#f97316;
+  --medium:#eab308;
+  --low:#22c55e;
+  --safe:#3b82f6;
+  --text:#e2e8f0;
+  --muted:#64748b;
+  --hop0:#6366f1;
+}
+*{margin:0;padding:0;box-sizing:border-box;}
+body{background:var(--bg);color:var(--text);font-family:'Sora',sans-serif;height:100vh;overflow:hidden;display:flex;flex-direction:column;}
+
+/* ── Topbar ── */
+.topbar{display:flex;align-items:center;gap:16px;padding:12px 24px;background:var(--panel);border-bottom:1px solid var(--border);flex-shrink:0;}
+.logo{font-size:14px;font-weight:700;color:var(--amber);}
+.logo span{color:#fff;}
+.topbar-title{font-size:13px;color:var(--muted);flex:1;}
+.btn{padding:7px 18px;border-radius:6px;font-size:12px;font-weight:600;cursor:pointer;border:none;font-family:'Sora',sans-serif;transition:.2s;}
+.btn-amber{background:var(--amber);color:#000;}
+.btn-amber:hover{background:#d97706;}
+.btn-outline{background:transparent;border:1px solid var(--border);color:var(--text);}
+.btn-outline:hover{background:#1e2d4a;}
+.btn-outline.active{border-color:var(--amber);color:var(--amber);}
+.btn:disabled{opacity:.45;cursor:not-allowed;}
+.speed-label{font-size:11px;color:var(--muted);font-family:'Space Mono',monospace;}
+.speed-range{width:80px;accent-color:var(--amber);}
+
+/* ── Layout ── */
+.main{flex:1;display:flex;overflow:hidden;}
+.sidebar{width:280px;background:var(--panel);border-right:1px solid var(--border);display:flex;flex-direction:column;overflow-y:auto;flex-shrink:0;}
+.canvas-area{flex:1;position:relative;overflow:hidden;}
+#graph-svg{width:100%;height:100%;}
+
+/* ── Sidebar sections ── */
+.sb-section{padding:14px 16px;border-bottom:1px solid var(--border);}
+.sb-title{font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:1px;margin-bottom:10px;}
+.legend-row{display:flex;align-items:center;gap:8px;margin-bottom:6px;font-size:11px;color:var(--text);}
+.legend-dot{width:12px;height:12px;border-radius:50%;flex-shrink:0;}
+.legend-rect{width:16px;height:8px;border-radius:2px;flex-shrink:0;}
+
+/* ── Log panel ── */
+.log-area{flex:1;padding:10px 14px;overflow-y:auto;min-height:0;}
+.log-entry{font-size:10px;font-family:'Space Mono',monospace;padding:3px 0;border-bottom:1px solid #0f1629;display:flex;gap:6px;align-items:flex-start;}
+.log-ts{color:var(--muted);flex-shrink:0;}
+.log-msg{line-height:1.5;}
+.log-ok{color:var(--low);}
+.log-warn{color:var(--medium);}
+.log-crit{color:var(--critical);}
+.log-info{color:var(--safe);}
+.log-hop{color:var(--amber);}
+
+/* ── KPI strip ── */
+.kpi-strip{display:grid;grid-template-columns:repeat(4,1fr);gap:0;flex-shrink:0;}
+.kpi-item{padding:10px 14px;border-right:1px solid var(--border);border-bottom:1px solid var(--border);}
+.kpi-item:last-child{border-right:none;}
+.kpi-lbl{font-size:9px;color:var(--muted);text-transform:uppercase;letter-spacing:.6px;}
+.kpi-val{font-size:18px;font-weight:700;font-family:'Space Mono',monospace;margin-top:2px;}
+
+/* ── Tooltip ── */
+.tooltip{position:absolute;background:#1e293b;border:1px solid var(--border);border-radius:8px;padding:10px 14px;font-size:11px;pointer-events:none;opacity:0;transition:opacity .15s;max-width:220px;z-index:100;}
+.tt-title{font-weight:700;color:var(--amber);margin-bottom:6px;font-size:12px;}
+.tt-row{display:flex;justify-content:space-between;gap:12px;margin-bottom:3px;}
+.tt-key{color:var(--muted);}
+.tt-val{font-family:'Space Mono',monospace;color:var(--text);}
+
+/* ── Mode buttons ── */
+.mode-btns{display:flex;gap:6px;flex-wrap:wrap;padding:12px 16px;border-bottom:1px solid var(--border);}
+.mode-btn{flex:1;min-width:80px;padding:6px 8px;border-radius:5px;font-size:10px;font-weight:600;cursor:pointer;border:1px solid var(--border);background:transparent;color:var(--muted);text-align:center;transition:.2s;font-family:'Sora',sans-serif;}
+.mode-btn:hover{color:var(--text);border-color:var(--amber);}
+.mode-btn.active{background:rgba(245,158,11,.15);border-color:var(--amber);color:var(--amber);}
+
+/* ── Status badge ── */
+.status-badge{display:inline-block;padding:2px 7px;border-radius:3px;font-size:9px;font-weight:700;font-family:'Space Mono',monospace;}
+.sb-crit{background:#450a0a;color:#fca5a5;}
+.sb-high{background:#431407;color:#fdba74;}
+.sb-med{background:#422006;color:#fde68a;}
+.sb-low{background:#052e16;color:#86efac;}
+.sb-ok{background:#0c1d3e;color:#93c5fd;}
+
+/* ── Step indicator ── */
+.step-bar{display:flex;gap:4px;padding:10px 16px;border-bottom:1px solid var(--border);}
+.step-dot{width:8px;height:8px;border-radius:50%;background:var(--border);transition:.3s;}
+.step-dot.done{background:var(--low);}
+.step-dot.active{background:var(--amber);box-shadow:0 0 6px var(--amber);}
+
+/* ── Animations ── */
+@keyframes pulse{0%,100%{opacity:1;r:22;}50%{opacity:.7;r:26;}}
+@keyframes fadeIn{from{opacity:0;}to{opacity:1;}}
+.pulsing{animation:pulse 1s ease-in-out infinite;}
+</style>
+</head>
+<body>
+
+<!-- ── Topbar ── -->
+<div class="topbar">
+  <div class="logo">GraphLedger <span>AI</span></div>
+  <div class="topbar-title">Live Knowledge Graph Traversal Engine — GST ITC Chain Analysis</div>
+  <span class="speed-label">Speed</span>
+  <input class="speed-range" type="range" id="speed-range" min="1" max="5" value="3"/>
+  <button class="btn btn-outline active" id="btn-itc" onclick="setMode('itc')">ITC Chain</button>
+  <button class="btn btn-outline" id="btn-fraud" onclick="setMode('fraud')">Fraud Ring</button>
+  <button class="btn btn-outline" id="btn-gstr" onclick="setMode('gstr')">GSTR Filing</button>
+  <button class="btn btn-amber" id="btn-play" onclick="startAnimation()">▶ Run Traversal</button>
+  <button class="btn btn-outline" onclick="resetAll()">↺ Reset</button>
+</div>
+
+<!-- ── KPI strip ── -->
+<div class="kpi-strip">
+  <div class="kpi-item"><div class="kpi-lbl">ITC Eligible</div><div class="kpi-val" id="kpi-eligible" style="color:var(--low)">--</div></div>
+  <div class="kpi-item"><div class="kpi-lbl">ITC Blocked</div><div class="kpi-val" id="kpi-blocked" style="color:var(--critical)">--</div></div>
+  <div class="kpi-item"><div class="kpi-lbl">Hops Traversed</div><div class="kpi-val" id="kpi-hops" style="color:var(--amber)">0</div></div>
+  <div class="kpi-item"><div class="kpi-lbl">Status</div><div class="kpi-val" id="kpi-status" style="font-size:12px;color:var(--muted)">IDLE</div></div>
+</div>
+
+<!-- ── Main ── -->
+<div class="main">
+
+  <!-- Sidebar -->
+  <div class="sidebar">
+    <div class="mode-btns">
+      <div class="mode-btn active" id="mbtn-itc" onclick="setMode('itc')">ITC Chain BFS</div>
+      <div class="mode-btn" id="mbtn-fraud" onclick="setMode('fraud')">Circular Fraud</div>
+      <div class="mode-btn" id="mbtn-gstr" onclick="setMode('gstr')">GSTR Filing</div>
+    </div>
+
+    <div class="sb-section">
+      <div class="sb-title">Traversal Progress</div>
+      <div class="step-bar" id="step-bar"></div>
+      <div style="margin-top:8px;font-size:10px;color:var(--muted)" id="step-label">Click Run Traversal to start</div>
+    </div>
+
+    <div class="sb-section">
+      <div class="sb-title">Node Legend</div>
+      <div class="legend-row"><div class="legend-dot" style="background:var(--hop0)"></div>Recipient (Hop 0)</div>
+      <div class="legend-row"><div class="legend-dot" style="background:var(--low)"></div>Safe Vendor — Compliant</div>
+      <div class="legend-row"><div class="legend-dot" style="background:var(--medium)"></div>Warning — Mismatches</div>
+      <div class="legend-row"><div class="legend-dot" style="background:var(--critical)"></div>Blocked — ITC Invalid</div>
+      <div class="legend-row"><div class="legend-dot" style="background:var(--muted)"></div>Unvisited Node</div>
+      <div class="legend-row"><div class="legend-rect" style="background:var(--critical)"></div>Mismatch Event</div>
+      <div style="margin-top:8px;font-size:10px;color:var(--muted)">Edge particles = tax / transaction flow</div>
+    </div>
+
+    <div class="sb-section">
+      <div class="sb-title">Active Node Info</div>
+      <div id="node-info" style="font-size:11px;color:var(--muted)">Hover over a node to inspect</div>
+    </div>
+
+    <div class="sb-section" style="flex:0">
+      <div class="sb-title">Traversal Log</div>
+    </div>
+    <div class="log-area" id="log-area">
+      <div class="log-entry"><span class="log-ts">--:--:--</span><span class="log-info log-msg">System ready. Select a mode and click Run.</span></div>
+    </div>
+  </div>
+
+  <!-- Graph canvas -->
+  <div class="canvas-area">
+    <svg id="graph-svg"></svg>
+    <div class="tooltip" id="tooltip"></div>
+  </div>
+
+</div>
+
+<script>
+// ════════════════════════════════════════════════════════════
+// DATA
+// ════════════════════════════════════════════════════════════
+const NODES = [
+  {id:"n0", label:"ACME Exports", gstin:"29AADCV5678B1ZP", type:"GSTIN", hop:0,
+   risk:22, category:"LOW", sector:"Export", state:"Karnataka", itc:4520000,
+   filingStreak:24, mismatches:0, status:"SAFE"},
+  {id:"n1", label:"Mahindra Castings", gstin:"27AABCM1234F1Z5", type:"GSTIN", hop:1,
+   risk:82, category:"CRITICAL", sector:"Manufacturing", state:"Maharashtra", itc:1850000,
+   filingStreak:2, mismatches:8, status:"WARN"},
+  {id:"n2", label:"Flex Systems", gstin:"07AAFCS9876K1Z3", type:"GSTIN", hop:2,
+   risk:67, category:"HIGH", sector:"Services", state:"Delhi", itc:940000,
+   filingStreak:7, mismatches:5, status:"WARN"},
+  {id:"n3", label:"Gujarat Agro", gstin:"24AAACG8765H1Z7", type:"GSTIN", hop:2,
+   risk:71, category:"HIGH", sector:"Manufacturing", state:"Gujarat", itc:980000,
+   filingStreak:4, mismatches:6, status:"BLOCKED"},
+  {id:"n4", label:"Chennai Electrical", gstin:"33AAECS3456J1Z1", type:"GSTIN", hop:3,
+   risk:55, category:"MEDIUM", sector:"Trading", state:"Tamil Nadu", itc:430000,
+   filingStreak:11, mismatches:3, status:"WARN"},
+  {id:"n5", label:"Jain Logistics", gstin:"09AAACJ6543M1Z9", type:"GSTIN", hop:3,
+   risk:78, category:"HIGH", sector:"Services", state:"UP", itc:380000,
+   filingStreak:5, mismatches:4, status:"WARN"},
+  {id:"n6", label:"Delhi Cloud Tech", gstin:"07AAACL4567P1Z6", type:"GSTIN", hop:4,
+   risk:31, category:"LOW", sector:"Services", state:"Delhi", itc:210000,
+   filingStreak:22, mismatches:1, status:"SAFE"},
+  {id:"n7", label:"Bangalore Auto", gstin:"29AAACG2345N1Z2", type:"GSTIN", hop:4,
+   risk:44, category:"MEDIUM", sector:"Manufacturing", state:"Karnataka", itc:175000,
+   filingStreak:16, mismatches:2, status:"WARN"},
+  // Mismatch nodes
+  {id:"m1", label:"IRN Invalid\nINV-0042", type:"MISMATCH", itc:51300, riskLevel:"CRITICAL"},
+  {id:"m2", label:"Missing 2B\nINV-0091", type:"MISMATCH", itc:17730, riskLevel:"CRITICAL"},
+  {id:"m3", label:"Amt Mismatch\nINV-0078", type:"MISMATCH", itc:4320, riskLevel:"HIGH"},
+  // GSTR nodes
+  {id:"g1r1", label:"GSTR-1\nOct 2024", type:"GSTR", gstrType:"GSTR1", filed:true,  period:"102024", entity:"n1"},
+  {id:"g1r2", label:"GSTR-2B\nOct 2024", type:"GSTR", gstrType:"GSTR2B", filed:true, period:"102024", entity:"n0"},
+  {id:"g2r1", label:"GSTR-1\nOct 2024", type:"GSTR", gstrType:"GSTR1", filed:false, period:"102024", entity:"n3"},
+  {id:"g3b",  label:"GSTR-3B\nOct 2024", type:"GSTR", gstrType:"GSTR3B", filed:true, period:"102024", entity:"n0"},
+];
+
+const LINKS = [
+  // ITC chain
+  {source:"n0", target:"n1", type:"PURCHASED",    amount:1850000, label:"₹18.5L"},
+  {source:"n0", target:"n2", type:"PURCHASED",    amount:940000,  label:"₹9.4L"},
+  {source:"n1", target:"n3", type:"PURCHASED",    amount:980000,  label:"₹9.8L"},
+  {source:"n1", target:"n4", type:"PURCHASED",    amount:430000,  label:"₹4.3L"},
+  {source:"n2", target:"n5", type:"PURCHASED",    amount:380000,  label:"₹3.8L"},
+  {source:"n3", target:"n6", type:"PURCHASED",    amount:210000,  label:"₹2.1L"},
+  {source:"n4", target:"n7", type:"PURCHASED",    amount:175000,  label:"₹1.75L"},
+  // Mismatches
+  {source:"n1", target:"m1", type:"HAS_MISMATCH", amount:51300,  label:"CRITICAL"},
+  {source:"n3", target:"m2", type:"HAS_MISMATCH", amount:17730,  label:"CRITICAL"},
+  {source:"n2", target:"m3", type:"HAS_MISMATCH", amount:4320,   label:"HIGH"},
+  // GSTR filing
+  {source:"n1",  target:"g1r1", type:"FILED",     amount:0, label:"Filed 11-Nov"},
+  {source:"n0",  target:"g1r2", type:"REFLECTED", amount:0, label:"Auto-gen 14-Nov"},
+  {source:"n3",  target:"g2r1", type:"FILED",     amount:0, label:"NOT FILED"},
+  {source:"n0",  target:"g3b",  type:"FILED",     amount:0, label:"Filed 20-Nov"},
+  // Circular ring (for fraud mode)
+  {source:"n1", target:"n2", type:"CIRCULAR",   amount:220000, label:"₹2.2L CIRCULAR"},
+  {source:"n2", target:"n3", type:"CIRCULAR",   amount:210000, label:"₹2.1L CIRCULAR"},
+  {source:"n3", target:"n1", type:"CIRCULAR",   amount:215000, label:"₹2.15L CIRCULAR"},
+];
+
+// BFS traversal sequence for ITC mode
+const ITC_STEPS = [
+  {hopNodes:["n0"],         msg:"Starting BFS from ACME Exports (Recipient)", type:"info"},
+  {hopNodes:["n1","n2"],    msg:"Hop 1 — Traversing to direct suppliers", type:"hop"},
+  {hopNodes:["m1","m3"],    msg:"⚠ Mismatch events found at Mahindra Castings & Flex Systems", type:"warn"},
+  {hopNodes:["n3","n4","n5"],msg:"Hop 2 — Traversing second-tier suppliers", type:"hop"},
+  {hopNodes:["m2"],         msg:"🚨 CRITICAL: Gujarat Agro missing from GSTR-2B — ITC BLOCKED", type:"crit"},
+  {hopNodes:["n6","n7"],    msg:"Hop 3 — Traversing third-tier suppliers", type:"hop"},
+  {hopNodes:[],             msg:"BFS complete. Chain risk: HIGH. ₹9.8L blocked at Hop 2.", type:"crit"},
+];
+
+const GSTR_STEPS = [
+  {nodes:["n1"],     links:["n1-g1r1"], msg:"Supplier GSTR-1 filed by Mahindra Castings (11-Nov deadline)", type:"ok"},
+  {nodes:["n0"],     links:["n0-g1r2"], msg:"GSTR-2B auto-populated for ACME Exports on 14-Nov", type:"info"},
+  {nodes:["n3"],     links:["n3-g2r1"], msg:"🚨 CRITICAL: Gujarat Agro did NOT file GSTR-1 — Invoice won't appear in 2B", type:"crit"},
+  {nodes:["n0"],     links:["n0-g3b"],  msg:"ACME files GSTR-3B and claims ITC — Gujarat Agro invoices INADMISSIBLE", type:"warn"},
+];
+
+const FRAUD_STEPS = [
+  {nodes:["n1"],           msg:"Starting fraud scan from Mahindra Castings", type:"info"},
+  {nodes:["n1","n2"],      msg:"Checking outgoing transactions — n1 → n2 (₹2.2L)", type:"hop"},
+  {nodes:["n1","n2","n3"], msg:"Following chain — n2 → n3 (₹2.1L)", type:"hop"},
+  {nodes:["n1","n2","n3"], msg:"🚨 CYCLE DETECTED: n3 → n1 — Circular Trading Ring!", type:"crit"},
+  {nodes:["n1","n2","n3"], msg:"Ring value: ₹6.45L | Generates fake ITC | Section 132 CGST Act", type:"crit"},
+];
+
+// ════════════════════════════════════════════════════════════
+// STATE
+// ════════════════════════════════════════════════════════════
+let svg, simulation, nodeG, linkG, particleLayer, labelG;
+let currentMode = "itc";
+let animating = false;
+let stepIndex  = 0;
+let visitedNodes = new Set();
+let blockedNodes = new Set();
+let particles = [];
+let animFrameId = null;
+let nodeElements, linkElements;
+
+function speed(){ return 6 - parseInt(document.getElementById('speed-range').value); } // 1=fast,5=slow → delay multiplier
+
+// ════════════════════════════════════════════════════════════
+// INIT D3
+// ════════════════════════════════════════════════════════════
+function initGraph(){
+  const svgEl = document.getElementById('graph-svg');
+  const W = svgEl.clientWidth, H = svgEl.clientHeight;
+
+  svg = d3.select('#graph-svg')
+    .call(d3.zoom().scaleExtent([.4,3]).on("zoom", e => container.attr("transform", e.transform)));
+
+  const container = svg.append("g").attr("id","container");
+
+  // Arrow markers
+  const defs = svg.append("defs");
+  const mkArrow = (id, color) => defs.append("marker").attr("id",id)
+    .attr("viewBox","0 0 10 10").attr("refX",28).attr("refY",5)
+    .attr("markerWidth",5).attr("markerHeight",5).attr("orient","auto")
+    .append("path").attr("d","M 0 0 L 10 5 L 0 10 z").attr("fill",color).attr("opacity",.8);
+  mkArrow("arr-default","#334155");
+  mkArrow("arr-active","#f59e0b");
+  mkArrow("arr-blocked","#ef4444");
+  mkArrow("arr-ok","#22c55e");
+  mkArrow("arr-circular","#a855f7");
+  mkArrow("arr-gstr","#3b82f6");
+
+  // Glow filters
+  const blur = defs.append("filter").attr("id","glow").attr("x","-30%").attr("y","-30%").attr("width","160%").attr("height","160%");
+  blur.append("feGaussianBlur").attr("stdDeviation","4").attr("result","blur");
+  const feMerge = blur.append("feMerge");
+  feMerge.append("feMergeNode").attr("in","blur");
+  feMerge.append("feMergeNode").attr("in","SourceGraphic");
+
+  particleLayer = container.append("g").attr("id","particles");
+  linkG = container.append("g").attr("id","links");
+  nodeG = container.append("g").attr("id","nodes");
+  labelG = container.append("g").attr("id","labels");
+
+  // Filter links/nodes by mode
+  const modeLinks = getLinksForMode("itc");
+  const modeNodes = getNodesForMode("itc");
+
+  // Force simulation
+  simulation = d3.forceSimulation(modeNodes)
+    .force("link", d3.forceLink(modeLinks).id(d=>d.id).distance(d => d.type==="HAS_MISMATCH"?80:d.type==="FILED"?90:120).strength(.7))
+    .force("charge", d3.forceManyBody().strength(-350))
+    .force("center", d3.forceCenter(W/2, H/2))
+    .force("collision", d3.forceCollide(50))
+    .on("tick", ticked);
+
+  drawLinks(modeLinks);
+  drawNodes(modeNodes);
+  buildStepBar();
+}
+
+function getNodesForMode(mode){
+  if(mode==="gstr") return NODES.filter(n=>!n.id.startsWith("m")&&(n.hop<=1||n.id==="n3"||n.id.startsWith("g")));
+  if(mode==="fraud") return NODES.filter(n=>["n1","n2","n3","m1","m2"].includes(n.id));
+  return NODES.filter(n=>!n.id.startsWith("g"));
+}
+function getLinksForMode(mode){
+  if(mode==="fraud") return LINKS.filter(l=>l.type==="CIRCULAR"||l.type==="HAS_MISMATCH").filter(l=>{
+    const srcs=["n1","n2","n3","m1","m2"]; return srcs.includes(l.source.id||l.source)&&srcs.includes(l.target.id||l.target);
+  });
+  if(mode==="gstr") return LINKS.filter(l=>l.type==="FILED"||l.type==="REFLECTED"||l.type==="PURCHASED").filter(l=>{
+    const ns=getNodesForMode("gstr").map(n=>n.id);
+    return ns.includes(l.source.id||l.source)&&ns.includes(l.target.id||l.target);
+  });
+  return LINKS.filter(l=>l.type==="PURCHASED"||l.type==="HAS_MISMATCH");
+}
+
+function drawLinks(links){
+  linkG.selectAll("*").remove();
+  linkElements = linkG.selectAll("line")
+    .data(links).enter().append("line")
+    .attr("class", d=>"link link-"+d.type)
+    .attr("stroke", d=>linkColor(d.type))
+    .attr("stroke-width", d=>d.type==="CIRCULAR"?2.5:d.type==="HAS_MISMATCH"?1.5:2)
+    .attr("stroke-dasharray", d=>d.type==="HAS_MISMATCH"?"5,4":d.type==="FILED"?"6,3":null)
+    .attr("stroke-opacity",.35)
+    .attr("marker-end","url(#arr-default)");
+
+  // Link labels
+  labelG.selectAll(".link-label").remove();
+  labelG.selectAll(".link-label").data(links.filter(l=>l.label&&l.type!=="FILED"&&l.type!=="REFLECTED"))
+    .enter().append("text").attr("class","link-label")
+    .attr("font-size",8).attr("fill","#475569")
+    .attr("text-anchor","middle").attr("font-family","Space Mono,monospace")
+    .text(d=>d.label);
+}
+
+function drawNodes(nodes){
+  nodeG.selectAll("*").remove();
+  const tooltip = document.getElementById("tooltip");
+
+  const ng = nodeG.selectAll("g.node").data(nodes).enter().append("g")
+    .attr("class","node")
+    .attr("id", d=>"node-"+d.id)
+    .style("cursor","pointer")
+    .call(d3.drag()
+      .on("start", (e,d)=>{if(!e.active)simulation.alphaTarget(.3).restart();d.fx=d.x;d.fy=d.y;})
+      .on("drag",  (e,d)=>{d.fx=e.x;d.fy=e.y;})
+      .on("end",   (e,d)=>{if(!e.active)simulation.alphaTarget(0);d.fx=null;d.fy=null;}))
+    .on("mouseover",(e,d)=>{
+      showTooltip(d,e);
+      document.getElementById("node-info").innerHTML = nodeInfoHtml(d);
+    })
+    .on("mouseout",()=>{
+      tooltip.style.opacity="0";
+    });
+
+  // Draw shape by node type
+  ng.each(function(d){
+    const g = d3.select(this);
+    if(d.type==="MISMATCH"){
+      g.append("rect").attr("x",-32).attr("y",-14).attr("width",64).attr("height",28)
+        .attr("rx",4).attr("fill","#450a0a").attr("stroke",d.riskLevel==="CRITICAL"?"#ef4444":"#f97316")
+        .attr("stroke-width",1.5);
+      g.append("text").attr("text-anchor","middle").attr("y",-2).attr("fill","#fca5a5")
+        .attr("font-size",7).attr("font-family","Space Mono,monospace")
+        .selectAll("tspan").data(d.label.split("\n")).enter().append("tspan")
+        .attr("x",0).attr("dy",(dd,i)=>i===0?0:10).text(dd=>dd);
+    } else if(d.type==="GSTR"){
+      g.append("rect").attr("x",-30).attr("y",-16).attr("width",60).attr("height",32)
+        .attr("rx",6).attr("fill", d.filed?"#0c2240":"#2d0a0a")
+        .attr("stroke",d.filed?"#3b82f6":"#ef4444").attr("stroke-width",1.5)
+        .attr("stroke-dasharray",d.filed?null:"4,3");
+      g.append("text").attr("text-anchor","middle").attr("y",-3).attr("fill",d.filed?"#93c5fd":"#fca5a5")
+        .attr("font-size",7).attr("font-family","Space Mono,monospace")
+        .selectAll("tspan").data(d.label.split("\n")).enter().append("tspan")
+        .attr("x",0).attr("dy",(dd,i)=>i===0?0:10).text(dd=>dd);
+    } else {
+      // GSTIN node — circle
+      const r = d.hop===0 ? 30 : 22;
+      g.append("circle").attr("r",r).attr("class","node-circle")
+        .attr("fill",nodeColor(d)).attr("fill-opacity",.2)
+        .attr("stroke",nodeColor(d)).attr("stroke-width",2);
+      // Inner fill
+      g.append("circle").attr("r",r-4).attr("class","node-inner")
+        .attr("fill",nodeColor(d)).attr("fill-opacity",.08);
+      // Risk score
+      g.append("text").attr("text-anchor","middle").attr("y",d.hop===0?5:4)
+        .attr("fill","#e2e8f0").attr("font-size",d.hop===0?13:11)
+        .attr("font-weight","700").attr("font-family","Space Mono,monospace")
+        .text(d.hop===0?"HOP 0":d.risk);
+      // Label below
+      g.append("text").attr("text-anchor","middle").attr("y",d.hop===0?50:40)
+        .attr("fill","#94a3b8").attr("font-size",d.hop===0?10:9)
+        .attr("font-family","Sora,sans-serif").text(d.label);
+      // Hop indicator
+      if(d.hop>0) g.append("text").attr("text-anchor","middle").attr("y",-28)
+        .attr("fill","#475569").attr("font-size",8).attr("font-family","Space Mono,monospace")
+        .text("HOP "+d.hop);
+    }
+  });
+}
+
+function nodeColor(d){
+  if(d.hop===0) return "#6366f1";
+  if(d.status==="BLOCKED") return "#ef4444";
+  if(d.risk>=70) return "#ef4444";
+  if(d.risk>=50) return "#f97316";
+  if(d.risk>=35) return "#eab308";
+  return "#22c55e";
+}
+function linkColor(type){
+  if(type==="HAS_MISMATCH") return "#ef4444";
+  if(type==="CIRCULAR") return "#a855f7";
+  if(type==="FILED") return "#3b82f6";
+  if(type==="REFLECTED") return "#22c55e";
+  return "#334155";
+}
+
+function ticked(){
+  linkG.selectAll("line")
+    .attr("x1",d=>d.source.x).attr("y1",d=>d.source.y)
+    .attr("x2",d=>d.target.x).attr("y2",d=>d.target.y);
+  nodeG.selectAll("g.node").attr("transform",d=>`translate(${d.x},${d.y})`);
+  labelG.selectAll(".link-label")
+    .attr("x",d=>(d.source.x+d.target.x)/2)
+    .attr("y",d=>(d.source.y+d.target.y)/2-6);
+}
+
+// ════════════════════════════════════════════════════════════
+// TOOLTIP
+// ════════════════════════════════════════════════════════════
+function showTooltip(d, event){
+  const tt = document.getElementById("tooltip");
+  if(d.type==="MISMATCH"){
+    tt.innerHTML=`<div class="tt-title">${d.label.replace("\n"," — ")}</div>
+    <div class="tt-row"><span class="tt-key">Risk</span><span class="tt-val" style="color:#ef4444">${d.riskLevel}</span></div>
+    <div class="tt-row"><span class="tt-key">ITC at Risk</span><span class="tt-val">₹${d.itc.toLocaleString('en-IN')}</span></div>
+    <div class="tt-row"><span class="tt-key">Section</span><span class="tt-val">16(2)(aa) CGST</span></div>`;
+  } else if(d.type==="GSTR"){
+    tt.innerHTML=`<div class="tt-title">${d.gstrType} — ${d.period}</div>
+    <div class="tt-row"><span class="tt-key">Status</span><span class="tt-val" style="color:${d.filed?"#22c55e":"#ef4444"}">${d.filed?"FILED":"NOT FILED"}</span></div>
+    <div class="tt-row"><span class="tt-key">Period</span><span class="tt-val">${d.period}</span></div>`;
+  } else {
+    tt.innerHTML=`<div class="tt-title">${d.label}</div>
+    <div class="tt-row"><span class="tt-key">GSTIN</span><span class="tt-val">${d.gstin}</span></div>
+    <div class="tt-row"><span class="tt-key">Risk Score</span><span class="tt-val" style="color:${nodeColor(d)}">${d.risk}/100</span></div>
+    <div class="tt-row"><span class="tt-key">Category</span><span class="tt-val">${d.category}</span></div>
+    <div class="tt-row"><span class="tt-key">ITC Value</span><span class="tt-val">₹${(d.itc/100000).toFixed(1)}L</span></div>
+    <div class="tt-row"><span class="tt-key">Filing Streak</span><span class="tt-val">${d.filingStreak} months</span></div>
+    <div class="tt-row"><span class="tt-key">Mismatches</span><span class="tt-val">${d.mismatches}</span></div>
+    <div class="tt-row"><span class="tt-key">Hop</span><span class="tt-val">${d.hop}</span></div>`;
+  }
+  const rect = document.getElementById("graph-svg").getBoundingClientRect();
+  tt.style.left=(event.clientX-rect.left+14)+"px";
+  tt.style.top=(event.clientY-rect.top-20)+"px";
+  tt.style.opacity="1";
+}
+
+function nodeInfoHtml(d){
+  if(!d.gstin) return `<span style="color:var(--amber)">${d.label?.replace("\n"," ")}</span>`;
+  const cat = {"CRITICAL":"sb-crit","HIGH":"sb-high","MEDIUM":"sb-med","LOW":"sb-low"}[d.category]||"sb-ok";
+  return `<div style="font-weight:600;color:var(--amber);margin-bottom:6px">${d.label}</div>
+<div style="color:var(--muted);font-size:10px;font-family:'Space Mono',monospace;margin-bottom:6px">${d.gstin}</div>
+<span class="status-badge ${cat}">${d.category}</span>
+<div style="margin-top:8px;display:grid;grid-template-columns:1fr 1fr;gap:4px;font-size:10px">
+<span style="color:var(--muted)">Risk:</span><span>${d.risk}/100</span>
+<span style="color:var(--muted)">ITC:</span><span>₹${(d.itc/100000).toFixed(1)}L</span>
+<span style="color:var(--muted)">Filing:</span><span>${d.filingStreak}/24 mo</span>
+<span style="color:var(--muted)">Mismatches:</span><span style="color:${d.mismatches>0?"#f97316":"#22c55e"}">${d.mismatches}</span>
+</div>`;
+}
+
+// ════════════════════════════════════════════════════════════
+// PARTICLE ANIMATION
+// ════════════════════════════════════════════════════════════
+let particleData = [];
+let animRunning = false;
+let animId = null;
+
+function spawnParticles(sourceId, targetId, color, count=3){
+  const sNode = simulation.nodes().find(n=>n.id===sourceId);
+  const tNode = simulation.nodes().find(n=>n.id===targetId);
+  if(!sNode||!tNode) return;
+  for(let i=0;i<count;i++){
+    particleData.push({
+      sx:sNode.x, sy:sNode.y, tx:tNode.x, ty:tNode.y,
+      progress: -(i*0.2), // stagger
+      color, size:3.5, opacity:1,
+      id: Math.random()
+    });
+  }
+}
+
+function animateParticles(){
+  // Update progress
+  particleData = particleData.filter(p=>p.progress<1.2);
+  particleData.forEach(p=>{p.progress += 0.008 * (6-speed());});
+
+  // Render
+  const circles = particleLayer.selectAll("circle.particle")
+    .data(particleData.filter(p=>p.progress>=0&&p.progress<=1), d=>d.id);
+  circles.enter().append("circle").attr("class","particle")
+    .attr("r",d=>d.size).attr("fill",d=>d.color).attr("opacity",d=>d.opacity);
+  circles
+    .attr("cx",d=>d.sx+(d.tx-d.sx)*d.progress)
+    .attr("cy",d=>d.sy+(d.ty-d.sy)*d.progress)
+    .attr("opacity",d=>d.progress>0.85?1-((d.progress-0.85)/0.15):1);
+  circles.exit().remove();
+
+  if(animRunning) animId = requestAnimationFrame(animateParticles);
+}
+
+function startParticleStream(pairs, color){
+  pairs.forEach(([s,t])=>spawnParticles(s,t,color,4));
+}
+
+// ════════════════════════════════════════════════════════════
+// NODE HIGHLIGHT
+// ════════════════════════════════════════════════════════════
+function highlightNode(id, color, glow=true){
+  const g = d3.select("#node-"+id);
+  g.select("circle.node-circle")
+    .transition().duration(400)
+    .attr("stroke", color)
+    .attr("stroke-width", 3.5)
+    .attr("fill-opacity",.35)
+    .attr("filter", glow?"url(#glow)":null);
+  g.select("circle.node-inner")
+    .transition().duration(400)
+    .attr("fill",color).attr("fill-opacity",.15);
+}
+
+function pulseNode(id){
+  const g = d3.select("#node-"+id).select("circle.node-circle");
+  function doPulse(){
+    g.transition().duration(600).attr("r",26).attr("fill-opacity",.45)
+     .transition().duration(600).attr("r",22).attr("fill-opacity",.2)
+     .on("end", doPulse);
+  }
+  doPulse();
+}
+
+function flashNode(id, color){
+  const g = d3.select("#node-"+id).select("circle.node-circle");
+  g.transition().duration(200).attr("fill",color).attr("fill-opacity",.6)
+   .transition().duration(400).attr("fill",color).attr("fill-opacity",.2);
+}
+
+function highlightLink(sourceId, targetId, color){
+  linkG.selectAll("line").each(function(d){
+    const sid = d.source.id||d.source, tid = d.target.id||d.target;
+    if(sid===sourceId&&tid===targetId){
+      d3.select(this).transition().duration(300)
+        .attr("stroke",color).attr("stroke-opacity",.9).attr("stroke-width",3)
+        .attr("marker-end","url(#arr-active)");
+    }
+  });
+}
+
+function dimUnvisited(){
+  nodeG.selectAll("g.node").each(function(d){
+    if(d.type==="GSTIN"&&!visitedNodes.has(d.id)){
+      d3.select(this).select("circle.node-circle")
+        .transition().attr("fill-opacity",.06).attr("stroke-opacity",.2);
+      d3.select(this).select("circle.node-inner")
+        .transition().attr("fill-opacity",.03);
+    }
+  });
+}
+
+function resetNodeStyles(){
+  nodeG.selectAll("g.node").each(function(d){
+    const g = d3.select(this);
+    g.select("circle.node-circle")
+      .interrupt().transition().duration(300)
+      .attr("stroke",nodeColor(d)).attr("stroke-width",2)
+      .attr("fill-opacity",.2).attr("filter",null).attr("r",d.hop===0?30:22);
+    g.select("circle.node-inner")
+      .interrupt().transition().duration(300).attr("fill-opacity",.08).attr("fill",nodeColor(d));
+  });
+  linkG.selectAll("line").transition().duration(300)
+    .attr("stroke",d=>linkColor(d.type)).attr("stroke-opacity",.35)
+    .attr("stroke-width",d=>d.type==="CIRCULAR"?2.5:d.type==="HAS_MISMATCH"?1.5:2)
+    .attr("marker-end","url(#arr-default)");
+}
+
+// ════════════════════════════════════════════════════════════
+// LOG
+// ════════════════════════════════════════════════════════════
+function addLog(msg, type="info"){
+  const area = document.getElementById("log-area");
+  const cls = {info:"log-info",ok:"log-ok",warn:"log-warn",crit:"log-crit",hop:"log-hop"}[type]||"log-info";
+  const ts = new Date().toLocaleTimeString("en-IN",{hour12:false});
+  const div = document.createElement("div");
+  div.className="log-entry";
+  div.innerHTML=`<span class="log-ts">${ts}</span><span class="${cls} log-msg">${msg}</span>`;
+  area.insertBefore(div, area.firstChild);
+}
+
+// ════════════════════════════════════════════════════════════
+// STEP BAR
+// ════════════════════════════════════════════════════════════
+function buildStepBar(){
+  const steps = currentMode==="gstr"?GSTR_STEPS:currentMode==="fraud"?FRAUD_STEPS:ITC_STEPS;
+  const bar = document.getElementById("step-bar");
+  bar.innerHTML = steps.map((_,i)=>`<div class="step-dot" id="sdot-${i}"></div>`).join("");
+}
+
+function updateStepBar(idx){
+  const steps = currentMode==="gstr"?GSTR_STEPS:currentMode==="fraud"?FRAUD_STEPS:ITC_STEPS;
+  steps.forEach((_,i)=>{
+    const dot = document.getElementById("sdot-"+i);
+    if(!dot) return;
+    dot.className = "step-dot"+(i<idx?" done":i===idx?" active":"");
+  });
+  document.getElementById("step-label").textContent =
+    idx < steps.length ? `Step ${idx+1} of ${steps.length}` : "Traversal complete";
+}
+
+// ════════════════════════════════════════════════════════════
+// ANIMATION SEQUENCES
+// ════════════════════════════════════════════════════════════
+async function sleep(ms){ return new Promise(r=>setTimeout(r,ms)); }
+
+async function runITCAnimation(){
+  const baseDelay = speed() * 600;
+  visitedNodes.clear(); blockedNodes.clear();
+
+  // Step 0 — highlight recipient
+  visitedNodes.add("n0");
+  highlightNode("n0","#6366f1",true);
+  pulseNode("n0");
+  addLog("Initiating ITC chain BFS from ACME Exports (Hop 0)","info");
+  addLog("Section 16(2)(aa) CGST — tracing upstream supply chain","info");
+  document.getElementById("kpi-hops").textContent="0";
+  document.getElementById("kpi-status").textContent="TRAVERSING";
+  updateStepBar(0);
+  await sleep(baseDelay);
+
+  // Step 1 — Hop 1
+  updateStepBar(1);
+  addLog("→ Hop 1: Checking direct suppliers n1, n2","hop");
+  for(const id of ["n1","n2"]){
+    const n = NODES.find(x=>x.id===id);
+    visitedNodes.add(id);
+    highlightLink("n0",id,"#f59e0b");
+    startParticleStream([["n0",id]],"#f59e0b");
+    await sleep(baseDelay/2);
+    highlightNode(id, n.status==="BLOCKED"?"#ef4444":n.risk>=60?"#f97316":"#eab308");
+    addLog(`  [HOP1] ${n.label} — Risk: ${n.risk} | Streak: ${n.filingStreak}mo | Mismatches: ${n.mismatches}`,
+           n.risk>=70?"crit":n.risk>=50?"warn":"ok");
+    document.getElementById("kpi-hops").textContent="1";
+    await sleep(baseDelay/2);
+  }
+
+  // Step 2 — show mismatch nodes
+  updateStepBar(2);
+  for(const id of ["m1","m3"]){
+    const m = NODES.find(x=>x.id===id);
+    highlightLink("n1","m1","#ef4444");
+    highlightLink("n2","m3","#ef4444");
+    startParticleStream([["n1","m1"],["n2","m3"]],"#ef4444");
+    d3.select("#node-"+id).select("rect").transition().duration(300)
+      .attr("fill","#450a0a").attr("stroke-width",2.5);
+    await sleep(baseDelay/3);
+  }
+  addLog("⚠ IRN_MISMATCH on INV-0042 at Mahindra Castings — ITC at risk","warn");
+  addLog("⚠ AMOUNT_MISMATCH on INV-0078 at Flex Systems","warn");
+  await sleep(baseDelay);
+
+  // Step 3 — Hop 2
+  updateStepBar(3);
+  addLog("→ Hop 2: Checking second-tier suppliers n3, n4, n5","hop");
+  for(const id of ["n3","n4","n5"]){
+    const n = NODES.find(x=>x.id===id);
+    if(!n) continue;
+    const parent = id==="n3"||id==="n4"?"n1":"n2";
+    visitedNodes.add(id);
+    highlightLink(parent, id, id==="n3"?"#ef4444":"#eab308");
+    startParticleStream([[parent,id]], id==="n3"?"#ef4444":"#eab308");
+    await sleep(baseDelay/2);
+    highlightNode(id, id==="n3"?"#ef4444":n.risk>=60?"#f97316":"#eab308");
+    addLog(`  [HOP2] ${n.label} — Risk: ${n.risk} | ${id==="n3"?"BLOCKED — Invoice missing in GSTR-2B":"Filing streak: "+n.filingStreak+"mo"}`,
+           id==="n3"?"crit":n.risk>=50?"warn":"ok");
+    document.getElementById("kpi-hops").textContent="2";
+    await sleep(baseDelay/2);
+  }
+
+  // Step 4 — blocked node
+  updateStepBar(4);
+  addLog("🚨 CRITICAL: Gujarat Agro (n3) — GSTR-1 NOT FILED for Oct 2024","crit");
+  addLog("  → Invoice INV-0091 will NOT appear in ACME's GSTR-2B","crit");
+  addLog("  → Section 16(2)(aa): ITC of ₹9.8L is INADMISSIBLE","crit");
+  highlightNode("n3","#ef4444",true);
+  d3.select("#node-n3").select("circle.node-circle")
+    .attr("stroke","#ef4444").attr("stroke-width",4).attr("filter","url(#glow)");
+  flashNode("n3","#ef4444");
+  blockedNodes.add("n3");
+  document.getElementById("kpi-blocked").textContent="₹9.8L";
+  await sleep(baseDelay*1.2);
+
+  // Step 5 — Hop 3
+  updateStepBar(5);
+  addLog("→ Hop 3: Checking third-tier suppliers n6, n7","hop");
+  for(const id of ["n6","n7"]){
+    const n = NODES.find(x=>x.id===id);
+    if(!n) continue;
+    const parent = id==="n6"?"n3":"n4";
+    visitedNodes.add(id);
+    // chain from blocked parent shows as dim
+    const col = id==="n6"?"#ef4444":"#eab308";
+    highlightLink(parent, id, col);
+    startParticleStream([[parent,id]], col);
+    await sleep(baseDelay/2);
+    highlightNode(id, n.risk>=50?"#f97316":"#eab308");
+    addLog(`  [HOP3] ${n.label} — Risk: ${n.risk}`,(n.risk>=50?"warn":"ok"));
+    document.getElementById("kpi-hops").textContent="3";
+    await sleep(baseDelay/2);
+  }
+
+  // Step 6 — final
+  updateStepBar(6);
+  dimUnvisited();
+  document.getElementById("kpi-eligible").textContent="₹70.2L";
+  document.getElementById("kpi-blocked").textContent="₹9.8L";
+  document.getElementById("kpi-status").textContent="COMPLETE";
+  addLog("═══════════════════════════════════","info");
+  addLog("BFS COMPLETE — Chain Risk Level: HIGH","crit");
+  addLog("Total ITC Eligible: ₹80.2L","ok");
+  addLog("Total ITC Blocked: ₹9.8L (at Hop 2 — Gujarat Agro)","crit");
+  addLog("Blocked by: Section 16(2)(aa) — Invoice not in GSTR-2B","crit");
+  addLog("Action: Reverse ₹9.8L ITC in next GSTR-3B filing","warn");
+  document.getElementById("kpi-hops").textContent="3";
+
+  // Keep streaming particles on active links
+  setInterval(()=>{
+    if(animRunning) startParticleStream([["n0","n1"],["n0","n2"],["n1","n4"],["n2","n5"],["n4","n7"]],"#f59e0b");
+  }, 1200);
+}
+
+async function runFraudAnimation(){
+  const baseDelay = speed() * 700;
+  document.getElementById("kpi-status").textContent="SCANNING";
+
+  addLog("Initiating circular trading scan — fraud detection mode","info");
+  addLog("Algorithm: DFS with cycle detection (Karp's algorithm)","info");
+  await sleep(baseDelay);
+
+  // Step 1
+  updateStepBar(0);
+  highlightNode("n1","#a855f7",true);
+  addLog("→ Starting DFS from Mahindra Castings","hop");
+  await sleep(baseDelay);
+
+  // Step 2
+  updateStepBar(1);
+  highlightLink("n1","n2","#a855f7");
+  startParticleStream([["n1","n2"]],"#a855f7");
+  await sleep(baseDelay/2);
+  highlightNode("n2","#a855f7");
+  addLog("→ n1 → n2 (Flex Systems) — ₹2.2L transaction","hop");
+  await sleep(baseDelay);
+
+  // Step 3
+  updateStepBar(2);
+  highlightLink("n2","n3","#a855f7");
+  startParticleStream([["n2","n3"]],"#a855f7");
+  await sleep(baseDelay/2);
+  highlightNode("n3","#a855f7");
+  addLog("→ n2 → n3 (Gujarat Agro) — ₹2.1L transaction","hop");
+  await sleep(baseDelay);
+
+  // Step 4 — cycle detected
+  updateStepBar(3);
+  highlightLink("n3","n1","#ef4444");
+  startParticleStream([["n3","n1"]],"#ef4444");
+  await sleep(baseDelay/2);
+  addLog("🚨🚨 CYCLE DETECTED: n3 → n1 closes the ring!","crit");
+  addLog("   Mahindra → Flex Systems → Gujarat Agro → Mahindra","crit");
+  addLog("   Ring ITC value: ₹6.45 Lakh (synthetic/fake ITC)","crit");
+
+  // Flash all 3 ring nodes
+  for(let i=0;i<4;i++){
+    await sleep(200);
+    ["n1","n2","n3"].forEach(id=>{
+      d3.select("#node-"+id).select("circle.node-circle")
+        .attr("stroke","#ef4444").attr("stroke-width",4).attr("fill","#ef4444").attr("fill-opacity",.4);
+    });
+    await sleep(200);
+    ["n1","n2","n3"].forEach(id=>{
+      d3.select("#node-"+id).select("circle.node-circle")
+        .attr("stroke","#a855f7").attr("stroke-width",3).attr("fill",nodeColor(NODES.find(n=>n.id===id))).attr("fill-opacity",.2);
+    });
+  }
+
+  // Step 5
+  updateStepBar(4);
+  addLog("═══════════════════════════════════","info");
+  addLog("FRAUD REPORT: 1 circular trading ring found","crit");
+  addLog("Legal exposure: Section 132 CGST Act — Prosecution","crit");
+  addLog("ITC to be reversed: ₹6.45L | Penalty: ₹6.45L (100%)","crit");
+  document.getElementById("kpi-blocked").textContent="₹6.45L";
+  document.getElementById("kpi-status").textContent="FRAUD FOUND";
+
+  // Keep circular particles
+  setInterval(()=>{
+    if(animRunning) startParticleStream([["n1","n2"],["n2","n3"],["n3","n1"]],"#a855f7");
+  }, 1000);
+}
+
+async function runGSTRAnimation(){
+  const baseDelay = speed() * 700;
+  document.getElementById("kpi-status").textContent="FILING";
+  addLog("Simulating GSTR filing sequence for Oct 2024","info");
+  addLog("Due dates: GSTR-1 (11-Nov), GSTR-2B (14-Nov), GSTR-3B (20-Nov)","info");
+  await sleep(baseDelay);
+
+  // Step 1 — GSTR-1 filed
+  updateStepBar(0);
+  highlightNode("n1","#22c55e");
+  addLog("✓ Mahindra Castings filed GSTR-1 on 11-Nov-2024","ok");
+  highlightLink("n1","g1r1","#22c55e");
+  startParticleStream([["n1","g1r1"]],"#22c55e");
+  d3.select("#node-g1r1").select("rect")
+    .transition().duration(600).attr("fill","#052e16").attr("stroke","#22c55e").attr("stroke-width",2.5);
+  await sleep(baseDelay);
+
+  // Step 2 — GSTR-2B auto-gen
+  updateStepBar(1);
+  addLog("→ GSTN auto-generates GSTR-2B for ACME Exports on 14-Nov","info");
+  highlightNode("n0","#3b82f6");
+  highlightLink("n0","g1r2","#3b82f6");
+  startParticleStream([["g1r1","g1r2"]],"#3b82f6");
+  d3.select("#node-g1r2").select("rect")
+    .transition().duration(600).attr("fill","#0c1d3e").attr("stroke","#3b82f6").attr("stroke-width",2.5);
+  await sleep(baseDelay);
+
+  // Step 3 — Gujarat Agro NOT filed
+  updateStepBar(2);
+  addLog("🚨 Gujarat Agro FAILED to file GSTR-1 by 11-Nov deadline!","crit");
+  addLog("   → Invoice INV-0091 (₹9.8L) will NOT appear in ACME's GSTR-2B","crit");
+  highlightNode("n3","#ef4444",true);
+  d3.select("#node-g2r1").select("rect")
+    .transition().duration(600).attr("fill","#450a0a").attr("stroke","#ef4444").attr("stroke-width",2.5);
+  // Flashing "not filed" node
+  for(let i=0;i<3;i++){
+    await sleep(300);
+    d3.select("#node-g2r1").attr("opacity",.3);
+    await sleep(300);
+    d3.select("#node-g2r1").attr("opacity",1);
+  }
+  await sleep(baseDelay/2);
+
+  // Step 4 — GSTR-3B
+  updateStepBar(3);
+  addLog("→ ACME files GSTR-3B on 20-Nov claiming ITC from GSTR-2B","info");
+  addLog("   ITC from Gujarat Agro's invoice — INADMISSIBLE","crit");
+  addLog("   Exposure: ₹9.8L must be reversed + interest @18% p.a.","warn");
+  highlightLink("n0","g3b","#eab308");
+  startParticleStream([["n0","g3b"]],"#eab308");
+  d3.select("#node-g3b").select("rect")
+    .transition().duration(600).attr("fill","#1a0f00").attr("stroke","#eab308");
+
+  addLog("═══════════════════════════════════","info");
+  addLog("GSTR FILING SEQUENCE COMPLETE","ok");
+  addLog("Issue: 1 supplier non-filing creates downstream ITC risk","crit");
+  document.getElementById("kpi-blocked").textContent="₹9.8L";
+  document.getElementById("kpi-status").textContent="COMPLETE";
+}
+
+// ════════════════════════════════════════════════════════════
+// CONTROLS
+// ════════════════════════════════════════════════════════════
+function setMode(mode){
+  currentMode = mode;
+  ["itc","fraud","gstr"].forEach(m=>{
+    document.getElementById("btn-"+m).classList.toggle("active",m===mode);
+    document.getElementById("mbtn-"+m).classList.toggle("active",m===mode);
+  });
+  resetAll();
+}
+
+async function startAnimation(){
+  if(animating) return;
+  animating = true;
+  animRunning = true;
+  document.getElementById("btn-play").disabled = true;
+  document.getElementById("btn-play").textContent = "⏳ Running...";
+
+  // Restart simulation briefly for nice layout
+  simulation.alpha(.1).restart();
+  await sleep(800);
+
+  animateParticles();
+
+  if(currentMode==="itc") await runITCAnimation();
+  else if(currentMode==="fraud") await runFraudAnimation();
+  else await runGSTRAnimation();
+
+  animating = false;
+  document.getElementById("btn-play").disabled = false;
+  document.getElementById("btn-play").textContent = "▶ Run Again";
+}
+
+function resetAll(){
+  animating = false;
+  animRunning = false;
+  if(animId) cancelAnimationFrame(animId);
+  animId = null;
+  particleData = [];
+  visitedNodes.clear();
+  blockedNodes.clear();
+  stepIndex = 0;
+
+  // Rebuild graph for mode
+  const mNodes = getNodesForMode(currentMode);
+  const mLinks = getLinksForMode(currentMode);
+  simulation.nodes(mNodes);
+  simulation.force("link").links(mLinks);
+  simulation.alpha(1).restart();
+
+  drawLinks(mLinks);
+  drawNodes(mNodes);
+  buildStepBar();
+  updateStepBar(-1);
+  particleLayer.selectAll("*").remove();
+  resetNodeStyles();
+
+  document.getElementById("kpi-eligible").textContent="--";
+  document.getElementById("kpi-blocked").textContent="--";
+  document.getElementById("kpi-hops").textContent="0";
+  document.getElementById("kpi-status").textContent="IDLE";
+  document.getElementById("node-info").textContent="Hover over a node to inspect";
+  document.getElementById("step-label").textContent="Click Run Traversal to start";
+  document.getElementById("btn-play").disabled=false;
+  document.getElementById("btn-play").textContent="▶ Run Traversal";
+
+  // Restart particle loop
+  animRunning = true;
+  animateParticles();
+}
+
+// ════════════════════════════════════════════════════════════
+// INIT
+// ════════════════════════════════════════════════════════════
+window.addEventListener('DOMContentLoaded', ()=>{
+  initGraph();
+  animRunning = true;
+  animateParticles();
+  // Gentle idle particles
+  setInterval(()=>{
+    if(!animating&&animRunning){
+      const pairs=[["n0","n1"],["n1","n3"],["n0","n2"]];
+      const pair = pairs[Math.floor(Math.random()*pairs.length)];
+      spawnParticles(pair[0],pair[1],"#334155",1);
+    }
+  }, 800);
+});
+</script>
+</body>
+</html>

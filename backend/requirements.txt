@@ -1,0 +1,14 @@
+# GraphLedger AI — Backend Dependencies
+fastapi>=0.115.0
+uvicorn[standard]>=0.30.0
+python-dotenv>=1.0.0
+pydantic>=2.9.0
+
+# Neo4j driver (used when Neo4j is available; optional for mock mode)
+# neo4j>=5.20.0
+
+# Graph algorithms (vendor risk centrality)
+networkx>=3.3
+
+# Data processing
+python-dateutil>=2.9.0

@@ -1,0 +1,1046 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1.0"/>
+<title>GraphLedger AI — GST ITC Risk Dashboard</title>
+<link href="https://fonts.googleapis.com/css2?family=Sora:wght@300;400;500;600;700&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet"/>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.0/chart.umd.min.js"></script>
+<style>
+:root{
+  --sidebar-bg:#0a0e1a;
+  --amber:#f59e0b;
+  --amber-light:#fde68a;
+  --paper:#f4f1ea;
+  --paper-dark:#e8e3d8;
+  --card-bg:#ffffff;
+  --text-main:#1a1a2e;
+  --text-muted:#6b7280;
+  --critical:#ef4444;
+  --high:#f97316;
+  --medium:#eab308;
+  --low:#22c55e;
+  --border:#e5e7eb;
+  --sidebar-text:#a0aec0;
+  --sidebar-active:#f59e0b;
+}
+*{margin:0;padding:0;box-sizing:border-box;}
+body{font-family:'Sora',sans-serif;background:var(--paper);color:var(--text-main);display:flex;min-height:100vh;}
+
+/* ── Sidebar ── */
+.sidebar{width:240px;min-height:100vh;background:var(--sidebar-bg);display:flex;flex-direction:column;position:fixed;left:0;top:0;bottom:0;z-index:100;}
+.sidebar-logo{padding:24px 20px;border-bottom:1px solid #1e2a3e;}
+.sidebar-logo .brand{font-size:15px;font-weight:700;color:#fff;letter-spacing:-.3px;}
+.sidebar-logo .sub{font-size:10px;color:var(--amber);font-family:'Space Mono',monospace;margin-top:2px;}
+nav{flex:1;padding:16px 0;}
+.nav-item{display:flex;align-items:center;gap:10px;padding:10px 20px;cursor:pointer;color:var(--sidebar-text);font-size:13px;font-weight:500;border-left:3px solid transparent;transition:.2s;}
+.nav-item:hover{color:#fff;background:#141c2e;}
+.nav-item.active{color:var(--amber);border-left-color:var(--amber);background:#141c2e;}
+.nav-item .icon{font-size:16px;width:20px;text-align:center;}
+.sidebar-stats{padding:16px 20px;border-top:1px solid #1e2a3e;}
+.sidebar-stats-title{font-size:10px;color:#4a5568;font-family:'Space Mono',monospace;text-transform:uppercase;letter-spacing:1px;margin-bottom:10px;}
+.stat-row{display:flex;justify-content:space-between;margin-bottom:6px;}
+.stat-label{font-size:11px;color:var(--sidebar-text);}
+.stat-val{font-size:11px;color:#fff;font-family:'Space Mono',monospace;}
+.sidebar-footer{padding:14px 20px;font-size:10px;color:#3a4a5e;border-top:1px solid #141c2e;}
+
+/* ── Main ── */
+.main{margin-left:240px;flex:1;display:flex;flex-direction:column;}
+.topbar{position:sticky;top:0;z-index:50;background:var(--paper-dark);border-bottom:1px solid var(--border);padding:12px 28px;display:flex;align-items:center;gap:12px;}
+.topbar h1{font-size:15px;font-weight:700;flex:1;color:var(--text-main);}
+.period-select{padding:6px 12px;border:1px solid var(--border);border-radius:6px;background:white;font-size:12px;font-family:'Sora',sans-serif;cursor:pointer;}
+.btn{padding:7px 16px;border-radius:6px;font-size:12px;font-weight:600;cursor:pointer;border:none;transition:.2s;}
+.btn-amber{background:var(--amber);color:#fff;}
+.btn-amber:hover{background:#d97706;}
+.btn-outline{background:white;border:1px solid var(--border);color:var(--text-main);}
+.btn-outline:hover{background:var(--paper-dark);}
+.loading-spin{display:none;width:16px;height:16px;border:2px solid #fff;border-top-color:transparent;border-radius:50%;animation:spin 0.6s linear infinite;}
+
+.content{padding:28px;flex:1;}
+.tab-content{display:none;}
+.tab-content.active{display:block;}
+
+/* ── Animations ── */
+@keyframes fadeUp{from{opacity:0;transform:translateY(20px);}to{opacity:1;transform:translateY(0);}}
+@keyframes spin{to{transform:rotate(360deg);}}
+@keyframes pulse{0%,100%{opacity:1;}50%{opacity:.4;}}
+.card{background:var(--card-bg);border-radius:10px;padding:20px;box-shadow:0 1px 4px rgba(0,0,0,.07);animation:fadeUp .4s ease both;}
+.card-title{font-size:12px;font-weight:600;color:var(--text-muted);text-transform:uppercase;letter-spacing:.6px;margin-bottom:16px;}
+
+/* ── KPI Grid ── */
+.kpi-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:16px;margin-bottom:24px;}
+.kpi-card{background:var(--card-bg);border-radius:10px;padding:20px;box-shadow:0 1px 4px rgba(0,0,0,.07);animation:fadeUp .35s ease both;}
+.kpi-label{font-size:11px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.6px;}
+.kpi-val{font-size:28px;font-weight:700;font-family:'Space Mono',monospace;color:var(--text-main);margin:6px 0 4px;}
+.kpi-sub{font-size:11px;color:var(--text-muted);}
+.kpi-accent{color:var(--amber);}
+.kpi-critical{color:var(--critical);}
+
+/* ── Badges ── */
+.badge{display:inline-block;padding:2px 8px;border-radius:4px;font-size:10px;font-weight:700;font-family:'Space Mono',monospace;}
+.badge-critical{background:#fee2e2;color:#b91c1c;}
+.badge-high{background:#ffedd5;color:#c2410c;}
+.badge-medium{background:#fef9c3;color:#a16207;}
+.badge-low{background:#dcfce7;color:#15803d;}
+.badge-pending{background:#fef3c7;color:#92400e;}
+.badge-progress{background:#dbeafe;color:#1e40af;}
+.badge-resolved{background:#d1fae5;color:#065f46;}
+
+/* ── Tables ── */
+.table-wrap{overflow-x:auto;border-radius:8px;border:1px solid var(--border);}
+table{width:100%;border-collapse:collapse;font-size:12px;}
+thead th{background:#f8fafc;padding:10px 12px;text-align:left;font-size:10px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:.6px;border-bottom:1px solid var(--border);}
+tbody td{padding:10px 12px;border-bottom:1px solid #f1f5f9;vertical-align:middle;}
+tbody tr:hover{background:#fafafa;}
+tbody tr:last-child td{border-bottom:none;}
+.mono{font-family:'Space Mono',monospace;font-size:11px;}
+
+/* ── Two col layout ── */
+.two-col{display:grid;grid-template-columns:1fr 1fr;gap:20px;margin-bottom:24px;}
+.three-col{display:grid;grid-template-columns:repeat(3,1fr);gap:16px;margin-bottom:24px;}
+
+/* ── Search & filter bar ── */
+.filter-bar{display:flex;gap:10px;margin-bottom:14px;align-items:center;}
+.search-input{flex:1;padding:8px 12px;border:1px solid var(--border);border-radius:6px;font-size:12px;font-family:'Sora',sans-serif;}
+.search-input:focus{outline:none;border-color:var(--amber);}
+select.filter-sel{padding:8px 12px;border:1px solid var(--border);border-radius:6px;font-size:12px;font-family:'Sora',sans-serif;background:white;cursor:pointer;}
+
+/* ── Progress bar ── */
+.prog-bar{background:#e5e7eb;border-radius:4px;height:6px;overflow:hidden;}
+.prog-fill{height:100%;border-radius:4px;transition:width .6s ease;}
+.prog-critical{background:var(--critical);}
+.prog-high{background:var(--high);}
+.prog-medium{background:var(--medium);}
+.prog-low{background:var(--low);}
+.prog-amber{background:var(--amber);}
+
+/* ── ITC Chain ── */
+.hop-node{display:flex;align-items:flex-start;gap:12px;padding:12px 16px;border-radius:8px;margin-bottom:8px;border:1px solid;}
+.hop-safe{background:#f0fdf4;border-color:#86efac;}
+.hop-warn{background:#fffbeb;border-color:#fcd34d;}
+.hop-risky{background:#fef2f2;border-color:#fca5a5;}
+.hop-badge{width:32px;height:32px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;font-family:'Space Mono',monospace;flex-shrink:0;}
+.hop-info{flex:1;}
+.hop-name{font-size:13px;font-weight:600;}
+.hop-gstin{font-size:10px;color:var(--text-muted);font-family:'Space Mono',monospace;}
+.hop-itc{font-family:'Space Mono',monospace;font-size:12px;font-weight:700;}
+.hop-note{font-size:11px;color:var(--text-muted);margin-top:2px;}
+
+/* ── Audit Terminal ── */
+.audit-layout{display:grid;grid-template-columns:300px 1fr;gap:0;border:1px solid var(--border);border-radius:10px;overflow:hidden;min-height:520px;}
+.audit-list{background:#f8fafc;border-right:1px solid var(--border);overflow-y:auto;}
+.audit-list-item{padding:12px 16px;cursor:pointer;border-bottom:1px solid var(--border);transition:.15s;}
+.audit-list-item:hover{background:#fff5d6;}
+.audit-list-item.selected{background:#fff5d6;border-left:3px solid var(--amber);}
+.audit-list-item .mis-id{font-size:10px;font-family:'Space Mono',monospace;color:var(--amber);}
+.audit-list-item .mis-inv{font-size:12px;font-weight:600;margin:2px 0;}
+.audit-list-item .mis-type{font-size:10px;color:var(--text-muted);}
+.audit-panel{background:#0d1117;padding:0;display:flex;flex-direction:column;}
+.audit-panel-header{padding:12px 16px;background:#161b22;display:flex;align-items:center;gap:8px;border-bottom:1px solid #30363d;}
+.audit-panel-header span{font-size:11px;font-family:'Space Mono',monospace;color:#8b949e;}
+.audit-panel-btns{margin-left:auto;display:flex;gap:6px;}
+.term-btn{padding:4px 10px;background:#21262d;border:1px solid #30363d;border-radius:4px;color:#cdd9e5;font-size:10px;cursor:pointer;font-family:'Space Mono',monospace;}
+.term-btn:hover{background:#30363d;}
+.audit-content{padding:20px;color:#c9d1d9;font-family:'Space Mono',monospace;font-size:11px;line-height:1.8;white-space:pre-wrap;flex:1;overflow-y:auto;max-height:480px;}
+
+/* ── Risk score circle ── */
+.risk-circle{width:36px;height:36px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;font-family:'Space Mono',monospace;color:#fff;flex-shrink:0;}
+
+/* ── Alerts ── */
+.alert-item{display:flex;align-items:center;gap:10px;padding:12px 16px;border-radius:8px;background:#fef2f2;border:1px solid #fca5a5;margin-bottom:8px;}
+.pulse-dot{width:10px;height:10px;border-radius:50%;background:var(--critical);animation:pulse 1.2s ease-in-out infinite;flex-shrink:0;}
+
+/* ── Legal citations ── */
+.legal-panel{background:#1e293b;border-radius:8px;padding:16px;}
+.legal-item{padding:8px 0;border-bottom:1px solid #334155;font-size:11px;color:#94a3b8;}
+.legal-item:last-child{border-bottom:none;}
+.legal-sec{font-family:'Space Mono',monospace;color:var(--amber);font-size:11px;}
+
+/* ── SVG Graph ── */
+.graph-svg-wrap{background:#0d1117;border-radius:8px;padding:8px;overflow:hidden;}
+svg text{font-family:'Space Mono',monospace;}
+
+/* ── Cypher panel ── */
+.cypher-panel{background:#0d1117;border-radius:8px;padding:16px;}
+.cypher-query{background:#161b22;border-radius:6px;padding:12px;margin-bottom:10px;font-family:'Space Mono',monospace;font-size:10px;color:#79c0ff;line-height:1.6;}
+.cypher-title{font-size:10px;color:#8b949e;margin-bottom:6px;}
+
+/* ── Period cards ── */
+.period-cards{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-top:16px;}
+.period-card{background:var(--paper-dark);border-radius:8px;padding:14px;}
+.period-month{font-size:11px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:.5px;}
+.period-rate{font-size:22px;font-weight:700;font-family:'Space Mono',monospace;margin:4px 0;}
+
+/* ── Modal ── */
+.modal-backdrop{display:none;position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:999;align-items:center;justify-content:center;}
+.modal-backdrop.open{display:flex;}
+.modal{background:#fff;border-radius:12px;padding:28px;max-width:640px;width:90%;max-height:80vh;overflow-y:auto;}
+.modal-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;}
+.modal-close{background:none;border:none;font-size:20px;cursor:pointer;color:var(--text-muted);}
+.modal-body{font-family:'Space Mono',monospace;font-size:11px;white-space:pre-wrap;background:#0d1117;color:#c9d1d9;padding:16px;border-radius:8px;line-height:1.8;max-height:400px;overflow-y:auto;}
+
+/* ── Contagion alert ── */
+.contagion-alert{background:#fff5f5;border:1px solid #fca5a5;border-radius:8px;padding:14px;margin-top:14px;}
+.contagion-title{font-size:12px;font-weight:700;color:var(--critical);margin-bottom:6px;}
+.contagion-path{font-family:'Space Mono',monospace;font-size:12px;color:var(--critical);letter-spacing:1px;}
+
+/* ── AI Insight cards ── */
+.insight-card{background:linear-gradient(135deg,#1e293b,#0f172a);color:#e2e8f0;border-radius:10px;padding:18px;margin-bottom:12px;}
+.insight-vendor{font-size:12px;font-weight:700;color:var(--amber);margin-bottom:6px;}
+.insight-text{font-size:12px;line-height:1.7;color:#94a3b8;}
+.insight-action{margin-top:10px;font-size:11px;background:rgba(245,158,11,.15);border:1px solid rgba(245,158,11,.3);border-radius:6px;padding:8px;color:var(--amber-light);}
+</style>
+</head>
+<body>
+<!-- ══════════════ SIDEBAR ══════════════ -->
+<aside class="sidebar">
+  <div class="sidebar-logo">
+    <div class="brand">🏦 GraphLedger AI</div>
+    <div class="sub">GST ITC Risk Intelligence v2.0</div>
+  </div>
+  <nav>
+    <div class="nav-item active" onclick="switchTab('overview',this)"><span class="icon">📊</span>Overview</div>
+    <div class="nav-item" onclick="switchTab('recon',this)"><span class="icon">🔍</span>Reconciliation</div>
+    <div class="nav-item" onclick="switchTab('chain',this)"><span class="icon">🔗</span>ITC Chain</div>
+    <div class="nav-item" onclick="switchTab('vendor',this)"><span class="icon">🏢</span>Vendor Risk</div>
+    <div class="nav-item" onclick="switchTab('audit',this)"><span class="icon">📋</span>Audit Trail</div>
+    <div class="nav-item" onclick="switchTab('predict',this)"><span class="icon">🤖</span>Predictions</div>
+    <div class="nav-item" onclick="switchTab('graph',this)"><span class="icon">🕸</span>Graph Explorer</div>
+  </nav>
+  <div class="sidebar-stats">
+    <div class="sidebar-stats-title">Graph Stats</div>
+    <div class="stat-row"><span class="stat-label">Total Nodes</span><span class="stat-val">245</span></div>
+    <div class="stat-row"><span class="stat-label">Total Edges</span><span class="stat-val">618</span></div>
+    <div class="stat-row"><span class="stat-label">Vendors</span><span class="stat-val">50</span></div>
+    <div class="stat-row"><span class="stat-label">Mismatches</span><span class="stat-val">150</span></div>
+    <div class="stat-row"><span class="stat-label">Invoices</span><span class="stat-val">500</span></div>
+    <div class="stat-row"><span class="stat-label">Match Rate</span><span class="stat-val" style="color:var(--amber)">70.0%</span></div>
+  </div>
+  <div class="sidebar-footer">Powered by GraphLedger AI · NetworkX</div>
+</aside>
+
+<!-- ══════════════ MAIN ══════════════ -->
+<main class="main">
+  <!-- Topbar -->
+  <div class="topbar">
+    <h1 id="page-title">Executive Overview</h1>
+    <select class="period-select" id="period-sel">
+      <option>Q4 2024 (Oct–Dec)</option>
+      <option>Q3 2024 (Jul–Sep)</option>
+      <option>Q2 2024 (Apr–Jun)</option>
+      <option>Q1 2024 (Jan–Mar)</option>
+    </select>
+    <button class="btn btn-amber" id="run-recon-btn" onclick="runRecon()">
+      <span id="btn-text">▶ Run Recon</span>
+      <div class="loading-spin" id="btn-spin"></div>
+    </button>
+    <button class="btn btn-outline" onclick="exportSummary()">⬇ Export</button>
+  </div>
+
+  <div class="content">
+
+<!-- ══════════════ TAB: OVERVIEW ══════════════ -->
+<div class="tab-content active" id="tab-overview">
+  <div class="kpi-grid">
+    <div class="kpi-card" style="animation-delay:.05s">
+      <div class="kpi-label">Total ITC at Risk</div>
+      <div class="kpi-val kpi-critical">₹16,45,800</div>
+      <div class="kpi-sub">Across 150 mismatch events</div>
+    </div>
+    <div class="kpi-card" style="animation-delay:.1s">
+      <div class="kpi-label">Mismatches Detected</div>
+      <div class="kpi-val">150</div>
+      <div class="kpi-sub">30% of 500 invoices</div>
+    </div>
+    <div class="kpi-card" style="animation-delay:.15s">
+      <div class="kpi-label">Knowledge Graph Nodes</div>
+      <div class="kpi-val kpi-accent">245</div>
+      <div class="kpi-sub">618 edges mapped</div>
+    </div>
+    <div class="kpi-card" style="animation-delay:.2s">
+      <div class="kpi-label">Overall Match Rate</div>
+      <div class="kpi-val" style="color:var(--low)">70.0%</div>
+      <div class="kpi-sub">Target ≥ 95%</div>
+    </div>
+  </div>
+
+  <div class="two-col">
+    <div class="card" style="animation-delay:.25s">
+      <div class="card-title">Mismatch Category Breakdown</div>
+      <div id="type-breakdown-list"></div>
+    </div>
+    <div class="card" style="animation-delay:.3s">
+      <div class="card-title">Risk Level Distribution</div>
+      <canvas id="riskDonut" height="200"></canvas>
+    </div>
+  </div>
+
+  <div class="card" style="animation-delay:.35s;margin-bottom:24px;">
+    <div class="card-title">🔴 Critical Alerts — Immediate Action Required</div>
+    <div id="critical-alerts"></div>
+  </div>
+
+  <div class="card" style="animation-delay:.4s">
+    <div class="card-title">Period Summary — Q4 2024</div>
+    <div class="period-cards">
+      <div class="period-card">
+        <div class="period-month">October 2024</div>
+        <div class="period-rate" style="color:var(--medium)">72%</div>
+        <div class="kpi-sub">38 mismatches · ₹4.8L at risk</div>
+        <div class="prog-bar" style="margin-top:8px"><div class="prog-fill prog-medium" style="width:72%"></div></div>
+      </div>
+      <div class="period-card">
+        <div class="period-month">November 2024</div>
+        <div class="period-rate" style="color:var(--high)">68%</div>
+        <div class="kpi-sub">51 mismatches · ₹6.2L at risk</div>
+        <div class="prog-bar" style="margin-top:8px"><div class="prog-fill prog-high" style="width:68%"></div></div>
+      </div>
+      <div class="period-card">
+        <div class="period-month">December 2024</div>
+        <div class="period-rate" style="color:var(--low)">75%</div>
+        <div class="kpi-sub">31 mismatches · ₹3.6L at risk</div>
+        <div class="prog-bar" style="margin-top:8px"><div class="prog-fill prog-low" style="width:75%"></div></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════════ TAB: RECONCILIATION ══════════════ -->
+<div class="tab-content" id="tab-recon">
+  <div class="filter-bar">
+    <input class="search-input" id="recon-search" placeholder="🔍 Search by invoice, GSTIN..." oninput="filterReconTable()"/>
+    <select class="filter-sel" id="recon-risk-filter" onchange="filterReconTable()">
+      <option value="">All Risk Levels</option>
+      <option value="CRITICAL">🔴 Critical</option>
+      <option value="HIGH">🟠 High</option>
+      <option value="MEDIUM">🟡 Medium</option>
+      <option value="LOW">🟢 Low</option>
+    </select>
+  </div>
+  <div class="table-wrap" style="margin-bottom:24px">
+    <table id="recon-table">
+      <thead><tr>
+        <th>Invoice No</th><th>Supplier GSTIN</th><th>Mismatch Type</th>
+        <th>GSTR-1 ₹</th><th>GSTR-2B ₹</th><th>ITC at Risk</th>
+        <th>Period</th><th>Risk</th><th>Status</th><th>Action</th>
+      </tr></thead>
+      <tbody id="recon-body"></tbody>
+    </table>
+  </div>
+  <div class="two-col">
+    <div class="card">
+      <div class="card-title">ITC at Risk Trend (Jan–Aug 2024)</div>
+      <canvas id="itcTrend" height="200"></canvas>
+    </div>
+    <div class="card">
+      <div class="card-title">Resolution Status</div>
+      <canvas id="resolutionBar" height="200"></canvas>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════════ TAB: ITC CHAIN ══════════════ -->
+<div class="tab-content" id="tab-chain">
+  <div class="three-col">
+    <div class="kpi-card">
+      <div class="kpi-label">Chain ITC Eligible</div>
+      <div class="kpi-val kpi-accent">₹80,20,000</div>
+      <div class="kpi-sub">4-hop supply chain</div>
+    </div>
+    <div class="kpi-card">
+      <div class="kpi-label">Blocked at Source</div>
+      <div class="kpi-val kpi-critical">₹9,80,000</div>
+      <div class="kpi-sub">Hop 2 — INVOICE_MISSING_2B</div>
+    </div>
+    <div class="kpi-card">
+      <div class="kpi-label">Chain Risk Level</div>
+      <div class="kpi-val" style="color:var(--high)">HIGH</div>
+      <div class="kpi-sub">Section 16(2)(aa) exposure</div>
+    </div>
+  </div>
+
+  <div class="two-col" style="align-items:start">
+    <div class="card">
+      <div class="card-title">Supply Chain ITC Traversal</div>
+      <div id="hop-tree"></div>
+    </div>
+    <div>
+      <div class="card" style="margin-bottom:16px">
+        <div class="card-title">ITC Eligible vs Blocked per Hop</div>
+        <canvas id="hopChart" height="220"></canvas>
+      </div>
+      <div class="legal-panel">
+        <div class="card-title" style="color:#94a3b8">📜 Regulatory Citations</div>
+        <div class="legal-item"><div class="legal-sec">Section 16(2)(aa) CGST Act</div>ITC admissible only if invoice appears in GSTR-2B of recipient</div>
+        <div class="legal-item"><div class="legal-sec">Rule 36(4) CGST Rules</div>Provisional ITC capped at 105% of GSTR-2B eligible ITC</div>
+        <div class="legal-item"><div class="legal-sec">Section 16(2)(c) CGST Act</div>ITC linked to supplier's actual tax deposit with government</div>
+        <div class="legal-item"><div class="legal-sec">Section 122(1)(ii) CGST Act</div>Penalty for wrongful ITC availment — 100% of tax involved</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════════ TAB: VENDOR RISK ══════════════ -->
+<div class="tab-content" id="tab-vendor">
+  <div class="filter-bar">
+    <select class="filter-sel" id="vendor-risk-filter" onchange="filterVendorTable()">
+      <option value="">All Categories</option>
+      <option value="CRITICAL">🔴 Critical</option>
+      <option value="HIGH">🟠 High</option>
+      <option value="MEDIUM">🟡 Medium</option>
+      <option value="LOW">🟢 Low</option>
+    </select>
+  </div>
+  <div class="table-wrap" style="margin-bottom:24px">
+    <table id="vendor-table">
+      <thead><tr>
+        <th>Risk</th><th>Vendor / GSTIN</th><th>Sector / State</th>
+        <th>Mismatches</th><th>ITC at Risk</th><th>Filing Streak</th>
+        <th>Category</th><th>Recommendation</th>
+      </tr></thead>
+      <tbody id="vendor-body"></tbody>
+    </table>
+  </div>
+  <div class="two-col">
+    <div class="card">
+      <div class="card-title">Vendor Risk Scores</div>
+      <canvas id="vendorBarChart" height="250"></canvas>
+    </div>
+    <div class="card">
+      <div class="card-title">⚠️ Contagion Risk Network</div>
+      <p style="font-size:12px;color:var(--text-muted);margin-bottom:12px">Circular trading pattern detected between 3 vendors. Risk propagation risk under Section 16(2)(c).</p>
+      <div class="contagion-alert">
+        <div class="contagion-title">🔴 Circular Trading Ring Detected</div>
+        <div class="contagion-path">Mahindra Castings → Flex Systems → Gujarat Agro → Mahindra Castings</div>
+        <div style="font-size:11px;color:#b91c1c;margin-top:6px">ITC at risk: ₹3,85,400 · Refer to Section 132 CGST Act</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════════ TAB: AUDIT TRAIL ══════════════ -->
+<div class="tab-content" id="tab-audit">
+  <div class="audit-layout">
+    <div class="audit-list" id="audit-list"></div>
+    <div class="audit-panel">
+      <div class="audit-panel-header">
+        <span>● AUDIT FINDING — GraphLedger AI Engine v2.0</span>
+        <div class="audit-panel-btns">
+          <button class="term-btn" onclick="copyAudit()">⎘ Copy</button>
+          <button class="term-btn" onclick="downloadAudit()">⬇ Download</button>
+        </div>
+      </div>
+      <div class="audit-content" id="audit-content">Select a mismatch from the list to view the audit finding...</div>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════════ TAB: PREDICTIONS ══════════════ -->
+<div class="tab-content" id="tab-predict">
+  <div class="two-col" style="align-items:start">
+    <div class="card">
+      <div class="card-title">Next Period Risk Forecast</div>
+      <table style="width:100%;border-collapse:collapse;font-size:12px;">
+        <thead><tr style="background:#f8fafc;">
+          <th style="padding:8px 10px;text-align:left;font-size:10px;color:var(--text-muted);text-transform:uppercase;border-bottom:1px solid var(--border)">Vendor</th>
+          <th style="padding:8px 10px;font-size:10px;color:var(--text-muted);text-transform:uppercase;border-bottom:1px solid var(--border)">Current</th>
+          <th style="padding:8px 10px;font-size:10px;color:var(--text-muted);text-transform:uppercase;border-bottom:1px solid var(--border)">Predicted</th>
+          <th style="padding:8px 10px;font-size:10px;color:var(--text-muted);text-transform:uppercase;border-bottom:1px solid var(--border)">Trend</th>
+        </tr></thead>
+        <tbody id="predict-table-body"></tbody>
+      </table>
+    </div>
+    <div>
+      <div class="card" style="margin-bottom:16px">
+        <div class="card-title">Risk Factor Weights</div>
+        <div id="risk-factors-list"></div>
+      </div>
+      <div class="card">
+        <div class="card-title">Current vs Predicted Categories</div>
+        <canvas id="predGroupChart" height="200"></canvas>
+      </div>
+    </div>
+  </div>
+  <div class="card" style="margin-top:20px">
+    <div class="card-title">🤖 AI Graph Intelligence Insights</div>
+    <div id="ai-insights"></div>
+  </div>
+</div>
+
+<!-- ══════════════ TAB: GRAPH EXPLORER ══════════════ -->
+<div class="tab-content" id="tab-graph">
+  <div class="two-col" style="align-items:start">
+    <div class="card">
+      <div class="card-title">Knowledge Graph Visualization</div>
+      <div class="graph-svg-wrap">
+        <svg id="kg-svg" width="100%" height="380" viewBox="0 0 700 380"></svg>
+      </div>
+      <div style="display:flex;gap:12px;margin-top:10px;flex-wrap:wrap;">
+        <span style="font-size:10px;display:flex;align-items:center;gap:4px"><span style="width:10px;height:10px;border-radius:50%;background:#ef4444;display:inline-block"></span>Critical (>65)</span>
+        <span style="font-size:10px;display:flex;align-items:center;gap:4px"><span style="width:10px;height:10px;border-radius:50%;background:#f97316;display:inline-block"></span>High (45–65)</span>
+        <span style="font-size:10px;display:flex;align-items:center;gap:4px"><span style="width:10px;height:10px;border-radius:50%;background:#22c55e;display:inline-block"></span>Low/Med (&lt;45)</span>
+        <span style="font-size:10px;display:flex;align-items:center;gap:4px"><span style="width:10px;height:10px;border-radius:4px;background:#ef4444;display:inline-block"></span>Mismatch Node</span>
+      </div>
+    </div>
+    <div>
+      <div class="card" style="margin-bottom:16px">
+        <div class="card-title">Graph Statistics</div>
+        <div class="stat-row"><span class="stat-label" style="color:var(--text-muted)">Nodes</span><span class="mono">245</span></div>
+        <div class="stat-row" style="margin-top:6px"><span class="stat-label" style="color:var(--text-muted)">Edges</span><span class="mono">618</span></div>
+        <div class="stat-row" style="margin-top:6px"><span class="stat-label" style="color:var(--text-muted)">Avg Degree</span><span class="mono">5.04</span></div>
+        <div class="stat-row" style="margin-top:6px"><span class="stat-label" style="color:var(--text-muted)">Connected Components</span><span class="mono">8</span></div>
+        <div class="stat-row" style="margin-top:6px"><span class="stat-label" style="color:var(--text-muted)">Risk Clusters</span><span class="mono">3</span></div>
+        <div class="stat-row" style="margin-top:6px"><span class="stat-label" style="color:var(--text-muted)">Circular Patterns</span><span class="mono" style="color:var(--critical)">1 detected</span></div>
+      </div>
+      <div class="cypher-panel">
+        <div class="card-title" style="color:#94a3b8;margin-bottom:10px">⌨ Sample Cypher Queries</div>
+        <div class="cypher-title">// 1. Multi-hop ITC chain validation</div>
+        <div class="cypher-query">MATCH path=(g:GSTIN)-[:SUPPLIER_OF]->(i:Invoice)
+  -[:HAS_MISMATCH]->(m:MismatchEvent)
+WHERE m.risk_level = 'CRITICAL'
+RETURN g.gstin, i.invoice_no, m.mismatch_type
+ORDER BY m.amount_at_risk DESC LIMIT 10</div>
+        <div class="cypher-title">// 2. Circular trading detection</div>
+        <div class="cypher-query">MATCH cycle=(g1:GSTIN)-[:TRANSACTS_WITH*2..4]->(g1)
+WHERE length(cycle) > 2
+RETURN nodes(cycle) AS ring,
+       reduce(v=0,r IN relationships(cycle)|
+              v + r.total_value) AS ring_value</div>
+        <div class="cypher-title">// 3. Non-filer vendor risk</div>
+        <div class="cypher-query">MATCH (g:GSTIN)-[:FILED]->(r:Return)
+WHERE r.return_type='GSTR1'
+  AND r.status='PENDING'
+  AND r.return_period > '012024'
+RETURN g.gstin, count(r) AS missed_filings
+ORDER BY missed_filings DESC</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+  </div><!-- /content -->
+</main>
+
+<!-- ══════════════ MODAL ══════════════ -->
+<div class="modal-backdrop" id="audit-modal" onclick="closeModal(event)">
+  <div class="modal">
+    <div class="modal-header">
+      <strong>Audit Finding</strong>
+      <button class="modal-close" onclick="document.getElementById('audit-modal').classList.remove('open')">✕</button>
+    </div>
+    <div class="modal-body" id="modal-audit-body">Loading...</div>
+  </div>
+</div>
+
+<script>
+// ══════════════ DATA CONSTANTS ══════════════
+const MISMATCHES = [
+  {id:"MIS-001",invoice_no:"INV-0042",supplier_gstin:"27AABCM1234F1Z5",buyer_gstin:"29AADCV5678B1ZP",mismatch_type:"IRN_MISMATCH",gstr1_value:285000,gstr2b_value:0,itc_at_risk:51300,period:"102024",risk_level:"CRITICAL",status:"PENDING",root_cause:"IRN not found on IRP portal"},
+  {id:"MIS-002",invoice_no:"INV-0078",supplier_gstin:"07AAFCS9876K1Z3",buyer_gstin:"27AABCM1234F1Z5",mismatch_type:"AMOUNT_MISMATCH",gstr1_value:142000,gstr2b_value:118000,itc_at_risk:4320,period:"092024",risk_level:"HIGH",status:"IN_PROGRESS",root_cause:"Supplier filed amendment in GSTR-1A"},
+  {id:"MIS-003",invoice_no:"INV-0091",supplier_gstin:"24AAACG8765H1Z7",buyer_gstin:"29AADCV5678B1ZP",mismatch_type:"INVOICE_MISSING_2B",gstr1_value:98500,gstr2b_value:0,itc_at_risk:17730,period:"082024",risk_level:"HIGH",status:"PENDING",root_cause:"Supplier GSTR-1 not filed for August 2024"},
+  {id:"MIS-004",invoice_no:"INV-0123",supplier_gstin:"33AAECS3456J1Z1",buyer_gstin:"27AABCM1234F1Z5",mismatch_type:"DATE_MISMATCH",gstr1_value:75000,gstr2b_value:75000,itc_at_risk:13500,period:"102024",risk_level:"MEDIUM",status:"IN_PROGRESS",root_cause:"Invoice date Oct, booked in Nov GSTR-3B"},
+  {id:"MIS-005",invoice_no:"INV-0156",supplier_gstin:"09AAACJ6543M1Z9",buyer_gstin:"29AADCV5678B1ZP",mismatch_type:"EWAYBILL_MISSING",gstr1_value:620000,gstr2b_value:620000,itc_at_risk:111600,period:"112024",risk_level:"CRITICAL",status:"PENDING",root_cause:"Goods value above ₹50k threshold, EWB not generated"},
+  {id:"MIS-006",invoice_no:"INV-0188",supplier_gstin:"29AAACG2345N1Z2",buyer_gstin:"27AABCM1234F1Z5",mismatch_type:"GSTIN_MISMATCH",gstr1_value:45000,gstr2b_value:45000,itc_at_risk:8100,period:"092024",risk_level:"HIGH",status:"RESOLVED",root_cause:"Wrong GSTIN captured at point of purchase"},
+  {id:"MIS-007",invoice_no:"INV-0201",supplier_gstin:"27AAFCS9876K1Z3",buyer_gstin:"29AADCV5678B1ZP",mismatch_type:"EXTRA_IN_2B",gstr1_value:0,gstr2b_value:55000,itc_at_risk:9900,period:"072024",risk_level:"MEDIUM",status:"IN_PROGRESS",root_cause:"Supplier uploaded duplicate invoice to GSTR-1"},
+  {id:"MIS-008",invoice_no:"INV-0234",supplier_gstin:"24AAACG8765H1Z7",buyer_gstin:"27AABCM1234F1Z5",mismatch_type:"IRN_MISMATCH",gstr1_value:890000,gstr2b_value:890000,itc_at_risk:160200,period:"112024",risk_level:"CRITICAL",status:"PENDING",root_cause:"IRN cryptographic signature tampered"},
+  {id:"MIS-009",invoice_no:"INV-0267",supplier_gstin:"07AAACL4567P1Z6",buyer_gstin:"29AADCV5678B1ZP",mismatch_type:"AMOUNT_MISMATCH",gstr1_value:330000,gstr2b_value:295000,itc_at_risk:6300,period:"082024",risk_level:"MEDIUM",status:"PENDING",root_cause:"CGST/SGST split incorrectly reported"},
+  {id:"MIS-010",invoice_no:"INV-0299",supplier_gstin:"33AAECS3456J1Z1",buyer_gstin:"27AABCM1234F1Z5",mismatch_type:"INVOICE_MISSING_2B",gstr1_value:178000,gstr2b_value:0,itc_at_risk:32040,period:"102024",risk_level:"HIGH",status:"IN_PROGRESS",root_cause:"Supplier filed nil GSTR-1 despite having sales"}
+];
+
+const VENDORS = [
+  {name:"Mahindra Castings Pvt Ltd",gstin:"27AABCM1234F1Z5",sector:"Manufacturing",state:"Maharashtra",risk_score:82,risk_category:"CRITICAL",mismatch_count:8,itc_at_risk:185400,filing_streak:2,rec:"Restrict ITC. Initiate vendor audit."},
+  {name:"Flex Systems India",gstin:"07AAFCS9876K1Z3",sector:"Services",state:"Delhi",risk_score:67,risk_category:"HIGH",mismatch_count:5,itc_at_risk:94500,filing_streak:7,rec:"Enhanced monitoring required."},
+  {name:"Gujarat Agro Chemicals",gstin:"24AAACG8765H1Z7",sector:"Manufacturing",state:"Gujarat",risk_score:71,risk_category:"HIGH",mismatch_count:6,itc_at_risk:210300,filing_streak:4,rec:"Request compliance certificate."},
+  {name:"Chennai Electrical Co",gstin:"33AAECS3456J1Z1",sector:"Trading",state:"Tamil Nadu",risk_score:55,risk_category:"MEDIUM",mismatch_count:3,itc_at_risk:45600,filing_streak:11,rec:"Quarterly review. Watch list."},
+  {name:"Jain Logistics UP",gstin:"09AAACJ6543M1Z9",sector:"Services",state:"Uttar Pradesh",risk_score:78,risk_category:"HIGH",mismatch_count:4,itc_at_risk:123900,filing_streak:5,rec:"Enhanced monitoring required."},
+  {name:"Bangalore Auto Parts",gstin:"29AAACG2345N1Z2",sector:"Manufacturing",state:"Karnataka",risk_score:44,risk_category:"MEDIUM",mismatch_count:2,itc_at_risk:28700,filing_streak:16,rec:"Quarterly review."},
+  {name:"Delhi Cloud Tech",gstin:"07AAACL4567P1Z6",sector:"Services",state:"Delhi",risk_score:31,risk_category:"LOW",mismatch_count:1,itc_at_risk:6300,filing_streak:22,rec:"Standard processing. Annual review."},
+  {name:"ACME Exports Ltd",gstin:"29AADCV5678B1ZP",sector:"Export",state:"Karnataka",risk_score:22,risk_category:"LOW",mismatch_count:0,itc_at_risk:0,filing_streak:24,rec:"No action required."}
+];
+
+const MISMATCH_TYPE_BREAKDOWN = [
+  {type:"AMOUNT_MISMATCH",count:53,itc_at_risk:285000,risk_level:"HIGH"},
+  {type:"INVOICE_MISSING_2B",count:37,itc_at_risk:412000,risk_level:"HIGH"},
+  {type:"EXTRA_IN_2B",count:15,itc_at_risk:89000,risk_level:"MEDIUM"},
+  {type:"GSTIN_MISMATCH",count:15,itc_at_risk:121500,risk_level:"HIGH"},
+  {type:"DATE_MISMATCH",count:15,itc_at_risk:67500,risk_level:"MEDIUM"},
+  {type:"IRN_MISMATCH",count:7,itc_at_risk:380700,risk_level:"CRITICAL"},
+  {type:"EWAYBILL_MISSING",count:8,itc_at_risk:289600,risk_level:"CRITICAL"}
+];
+
+const GRAPH_NODES = [
+  {id:"n1",gstin:"27AABCM1234F1Z5",name:"Mahindra Castings",risk:82,type:"GSTIN",x:100,y:80},
+  {id:"n2",gstin:"07AAFCS9876K1Z3",name:"Flex Systems",risk:67,type:"GSTIN",x:300,y:50},
+  {id:"n3",gstin:"24AAACG8765H1Z7",name:"Gujarat Agro",risk:71,type:"GSTIN",x:500,y:80},
+  {id:"n4",gstin:"33AAECS3456J1Z1",name:"Chennai Elec",risk:55,type:"GSTIN",x:600,y:200},
+  {id:"n5",gstin:"09AAACJ6543M1Z9",name:"Jain Logistics",risk:78,type:"GSTIN",x:450,y:260},
+  {id:"n6",gstin:"29AAACG2345N1Z2",name:"Bangalore Auto",risk:44,type:"GSTIN",x:250,y:300},
+  {id:"n7",gstin:"07AAACL4567P1Z6",name:"Delhi Cloud",risk:31,type:"GSTIN",x:80,y:250},
+  {id:"n8",gstin:"29AADCV5678B1ZP",name:"ACME Exports",risk:22,type:"GSTIN",x:350,y:180},
+  {id:"n9",label:"INV-0042\nCRITICAL",type:"Mismatch",x:180,y:160},
+  {id:"n10",label:"INV-0234\nCRITICAL",type:"Mismatch",x:420,y:140}
+];
+const GRAPH_EDGES=[
+  {from:"n1",to:"n2"},{from:"n2",to:"n3"},{from:"n3",to:"n1"},
+  {from:"n4",to:"n5"},{from:"n5",to:"n6"},{from:"n6",to:"n8"},
+  {from:"n7",to:"n8"},{from:"n1",to:"n9"},{from:"n3",to:"n10"},{from:"n2",to:"n4"}
+];
+
+const ITC_CHAIN_HOPS = [
+  {hop:0,name:"ACME Exports Ltd (Recipient)",gstin:"29AADCV5678B1ZP",itc_value:4520000,status:"SAFE",note:"Recipient — ITC claimed here",color:"#22c55e"},
+  {hop:1,name:"Mahindra Castings Pvt Ltd",gstin:"27AABCM1234F1Z5",itc_value:1850000,status:"WARN",note:"2 mismatches detected. IRN risk present.",color:"#f59e0b"},
+  {hop:2,name:"Gujarat Agro Chemicals",gstin:"24AAACG8765H1Z7",itc_value:980000,status:"RISKY",note:"⛔ INVOICE_MISSING_2B — ITC blocked here",color:"#ef4444"},
+  {hop:3,name:"Jain Logistics UP",gstin:"09AAACJ6543M1Z9",itc_value:430000,status:"WARN",note:"Filing streak only 5 months — monitoring",color:"#f59e0b"},
+  {hop:4,name:"Flex Systems India",gstin:"07AAFCS9876K1Z3",itc_value:210000,status:"SAFE",note:"No mismatches at this upstream hop",color:"#22c55e"}
+];
+
+const PREDICTIONS = [
+  {name:"Mahindra Castings",gstin:"27AABCM1234F1Z5",current:82,predicted:91,trend:"up",factors:["Critical IRN mismatch","High-risk neighbors","Streak only 2 months"]},
+  {name:"Jain Logistics UP",gstin:"09AAACJ6543M1Z9",current:78,predicted:83,trend:"up",factors:["Multiple mismatches","Low filing streak (5 months)"]},
+  {name:"Gujarat Agro",gstin:"24AAACG8765H1Z7",current:71,predicted:68,trend:"down",factors:["Resolved 2 mismatches","Filing improving"]},
+  {name:"Flex Systems",gstin:"07AAFCS9876K1Z3",current:67,predicted:72,trend:"up",factors:["Risky trading partners","AMOUNT_MISMATCH pattern"]},
+  {name:"Chennai Electrical",gstin:"33AAECS3456J1Z1",current:55,predicted:48,trend:"down",factors:["Filing streak improving","Mismatches resolved"]},
+  {name:"Bangalore Auto Parts",gstin:"29AAACG2345N1Z2",current:44,predicted:41,trend:"down",factors:["Stable filing","Low mismatch rate"]},
+  {name:"Delhi Cloud Tech",gstin:"07AAACL4567P1Z6",current:31,predicted:29,trend:"down",factors:["22-month streak","Clean record"]},
+  {name:"ACME Exports Ltd",gstin:"29AADCV5678B1ZP",current:22,predicted:22,trend:"stable",factors:["Zero mismatches","24-month perfect streak"]}
+];
+
+// ══════════════ UTILITIES ══════════════
+const inr = v => '₹' + new Intl.NumberFormat('en-IN').format(Math.round(v));
+const riskColor = r => ({CRITICAL:'#ef4444',HIGH:'#f97316',MEDIUM:'#eab308',LOW:'#22c55e'}[r]||'#94a3b8');
+const riskBadge = r => `<span class="badge badge-${r.toLowerCase()}">${r}</span>`;
+const statusBadge = s => `<span class="badge ${s==='RESOLVED'?'badge-resolved':s==='IN_PROGRESS'?'badge-progress':'badge-pending'}">${s}</span>`;
+const mismatchIcon = t => ({IRN_MISMATCH:'⚠️',AMOUNT_MISMATCH:'💰',INVOICE_MISSING_2B:'📭',EXTRA_IN_2B:'📬',GSTIN_MISMATCH:'🆔',DATE_MISMATCH:'📅',EWAYBILL_MISSING:'🚚'}[t]||'❓');
+
+// ══════════════ TAB SWITCHING ══════════════
+const TAB_TITLES = {overview:'Executive Overview',recon:'ITC Reconciliation',chain:'ITC Chain Analysis',vendor:'Vendor Risk Intelligence',audit:'Audit Trail Engine',predict:'Predictive Risk Model',graph:'Knowledge Graph Explorer'};
+function switchTab(id, el) {
+  document.querySelectorAll('.tab-content').forEach(t=>t.classList.remove('active'));
+  document.querySelectorAll('.nav-item').forEach(n=>n.classList.remove('active'));
+  document.getElementById('tab-'+id).classList.add('active');
+  el.classList.add('active');
+  document.getElementById('page-title').textContent = TAB_TITLES[id]||id;
+}
+
+// ══════════════ RUN RECON BUTTON ══════════════
+function runRecon(){
+  const btn=document.getElementById('run-recon-btn');
+  const txt=document.getElementById('btn-text');
+  const spin=document.getElementById('btn-spin');
+  txt.style.display='none'; spin.style.display='inline-block';
+  btn.disabled=true;
+  setTimeout(()=>{
+    txt.style.display='inline'; spin.style.display='none';
+    btn.disabled=false;
+    alert('✅ Reconciliation complete!\n\nPeriod: Q4 2024\n• Invoices processed: 500\n• Mismatches detected: 150\n• ITC at risk: ₹16,45,800\n• Critical findings: 15');
+  },2000);
+}
+
+// ══════════════ EXPORT ══════════════
+function exportSummary(){
+  const lines=["GraphLedger AI — GST ITC Risk Summary","Generated: "+new Date().toLocaleString(),"","KPIs","────","Total ITC at Risk: ₹16,45,800","Mismatches: 150 (30% of 500 invoices)","Match Rate: 70.0%","Critical Findings: 15","","Top Mismatches (by ITC at Risk)","────"];
+  MISMATCHES.slice(0,5).forEach(m=>lines.push(`${m.invoice_no} | ${m.mismatch_type} | ${inr(m.itc_at_risk)} | ${m.risk_level}`));
+  const blob=new Blob([lines.join('\n')],{type:'text/plain'});
+  const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='graphledger-summary.txt';a.click();
+}
+
+// ══════════════ MODAL ══════════════
+function openModal(id){
+  const m=MISMATCHES.find(x=>x.id===id);
+  document.getElementById('modal-audit-body').textContent = generateAuditText(m);
+  document.getElementById('audit-modal').classList.add('open');
+}
+function closeModal(e){if(e.target.id==='audit-modal')document.getElementById('audit-modal').classList.remove('open');}
+
+// ══════════════ AUDIT TEXT GENERATOR ══════════════
+function generateAuditText(m){
+  if(!m) return 'Not found.';
+  const ts = new Date().toLocaleString();
+  const variance = m.gstr1_value - m.gstr2b_value;
+  const pct = m.gstr1_value>0?(Math.abs(variance)/m.gstr1_value*100).toFixed(1):'N/A';
+  const headers = {
+    IRN_MISMATCH:     '⚠️  CRITICAL AUDIT FINDING — IRN INTEGRITY VIOLATION',
+    AMOUNT_MISMATCH:  '   HIGH RISK FINDING — INVOICE VALUE DISCREPANCY',
+    INVOICE_MISSING_2B:'   HIGH RISK FINDING — INVOICE NOT IN GSTR-2B',
+    EXTRA_IN_2B:      '   MEDIUM RISK FINDING — EXTRA INVOICE IN GSTR-2B',
+    GSTIN_MISMATCH:   '   HIGH RISK FINDING — GSTIN IDENTIFIER MISMATCH',
+    DATE_MISMATCH:    '   MEDIUM RISK FINDING — PERIOD DATE DISCREPANCY',
+    EWAYBILL_MISSING: '⚠️  CRITICAL FINDING — E-WAY BILL NOT GENERATED'
+  };
+  const rootCauses = {
+    IRN_MISMATCH:     `The Invoice Reference Number (IRN) could not be validated against\nthe IRP (Invoice Registration Portal). This indicates the IRN hash\nmay have been tampered with after generation. Under Rule 48(4) CGST\nRules, ITC on an invoice with invalid IRN is INADMISSIBLE.`,
+    AMOUNT_MISMATCH:  `Supplier filed an amendment (GSTR-1A) without buyer notification.\nThe amended value (${inr(m.gstr2b_value)}) differs from the original\ninvoice value (${inr(m.gstr1_value)}), creating a variance of ${inr(Math.abs(variance))} (${pct}%).`,
+    INVOICE_MISSING_2B:`Supplier has not filed GSTR-1 for return period ${m.period}.\nAs per Section 16(2)(aa) CGST Act, ITC is only admissible when\nthe invoice appears in buyer's GSTR-2B. This invoice does NOT\nappear in auto-populated GSTR-2B. ITC MUST be deferred.`,
+    EXTRA_IN_2B:      `Supplier uploaded a duplicate invoice to GSTR-1. This invoice\nappears in GSTR-2B but has no corresponding purchase entry in\nthe buyer's records. Risk of phantom ITC claim.`,
+    GSTIN_MISMATCH:   `Incorrect GSTIN was captured at the point of purchase. The GSTIN\non the invoice does not match any registered supplier profile.\nITC under this invoice is inadmissible until rectification.`,
+    DATE_MISMATCH:    `Invoice was issued in period ${m.period} but supplier filed it in\na different GSTR-1 return period. This creates a time-of-supply\ndiscrepancy under Section 12/13 CGST Act.`,
+    EWAYBILL_MISSING: `Goods valued above ₹50,000 were transported without a valid\nE-Way Bill as mandated by Rule 138 CGST Rules. This constitutes\na non-compliance event and ITC may be disallowed.`
+  };
+  const actions = {
+    IRN_MISMATCH:     `1. IMMEDIATELY reverse ITC of ${inr(m.itc_at_risk)} in current GSTR-3B\n2. Block payment to supplier until IRN validated\n3. File complaint on GST portal (Section 86A application)\n4. Preserve invoice + delivery challan as evidence\n5. Escalate to CFO and legal team within 24 hours`,
+    AMOUNT_MISMATCH:  `1. Issue formal notice to supplier requesting GSTR-1A amendment\n2. Provisionally reverse differential ITC of ${inr(m.itc_at_risk)}\n3. Monitor GSTR-2B for next 2 cycles for correction\n4. Reconcile TDS and accounts payable ledger`,
+    INVOICE_MISSING_2B:`1. Verify supplier filing status on GST portal\n2. Defer ITC of ${inr(m.itc_at_risk)} until invoice reflects in GSTR-2B\n3. Issue formal demand notice to supplier\n4. Consider holding payments until GSTR-1 is filed`,
+    EXTRA_IN_2B:      `1. Do NOT avail ITC on this invoice\n2. Raise query with supplier for clarification\n3. Verify physical goods receipt against this invoice\n4. If confirmed duplicate, report to supplier`,
+    GSTIN_MISMATCH:   `1. Obtain correct GSTIN from supplier immediately\n2. Request supplier to file amended GSTR-1\n3. Do not avail ITC until corrected invoice received\n4. Update procurement records`,
+    DATE_MISMATCH:    `1. Reconcile invoice date against GSTR-2B period\n2. Adjust ITC claim to correct return period\n3. Verify no double-claiming across periods\n4. Coordinate with accounts payable team`,
+    EWAYBILL_MISSING: `1. Obtain retrospective EWB if goods already received\n2. Reverse ITC of ${inr(m.itc_at_risk)} pending EWB validation\n3. Issue show-cause notice to logistics partner\n4. Update transport compliance policy`
+  };
+  const type = m.mismatch_type;
+  return `${headers[type]||'AUDIT FINDING'}
+${'═'.repeat(60)}
+MISMATCH ID    : ${m.id}
+INVOICE NO     : ${m.invoice_no}
+SUPPLIER GSTIN : ${m.supplier_gstin}
+RETURN PERIOD  : ${m.period}
+DETECTION DATE : ${ts}
+${'─'.repeat(60)}
+SECTION 1 — OBSERVATION
+${'─'.repeat(60)}
+Mismatch Type  : ${type}
+Root Cause     : ${m.root_cause}
+GSTR-1 Value   : ${inr(m.gstr1_value)}
+GSTR-2B Value  : ${inr(m.gstr2b_value)}
+Variance       : ${inr(Math.abs(variance))} (${pct}%)
+${'─'.repeat(60)}
+SECTION 2 — ROOT CAUSE ANALYSIS
+${'─'.repeat(60)}
+${rootCauses[type]||'See GST portal for details.'}
+${'─'.repeat(60)}
+SECTION 3 — ITC IMPACT
+${'─'.repeat(60)}
+ITC at Risk        : ${inr(m.itc_at_risk)}
+Admissibility      : ${type==='IRN_MISMATCH'?'INADMISSIBLE — Section 16(2)(aa)':'AT RISK — ITC deferral recommended'}
+Disallowance Basis : Section 16(2)(c) / 16(2)(aa) CGST Act 2017
+${'─'.repeat(60)}
+SECTION 4 — RECOMMENDED ACTIONS
+${'─'.repeat(60)}
+${actions[type]||'Contact GST helpdesk.'}
+${'─'.repeat(60)}
+SECTION 5 — RISK CLASSIFICATION
+${'─'.repeat(60)}
+Risk Level  : ${m.risk_level}  ${m.risk_level==='CRITICAL'?'⚠️  ESCALATE IMMEDIATELY TO CFO':''}
+Status      : ${m.status}
+Legal Refs  : Section 16(2), Rule 36(4), Section 122(1)(ii) CGST Act
+${'═'.repeat(60)}
+Generated by GraphLedger AI Risk Engine v2.0
+`;
+}
+
+// ══════════════ OVERVIEW RENDERS ══════════════
+function renderTypeBreakdown(){
+  const maxCount = Math.max(...MISMATCH_TYPE_BREAKDOWN.map(t=>t.count));
+  const el = document.getElementById('type-breakdown-list');
+  el.innerHTML = MISMATCH_TYPE_BREAKDOWN.map(t=>`
+    <div style="margin-bottom:10px">
+      <div style="display:flex;justify-content:space-between;margin-bottom:3px">
+        <span style="font-size:11px;font-weight:600">${mismatchIcon(t.type)} ${t.type}</span>
+        <span style="font-size:10px;font-family:'Space Mono',monospace;color:${riskColor(t.risk_level)}">${t.count} · ${inr(t.itc_at_risk)}</span>
+      </div>
+      <div class="prog-bar"><div class="prog-fill prog-${t.risk_level.toLowerCase()}" style="width:${(t.count/maxCount*100).toFixed(0)}%"></div></div>
+    </div>`).join('');
+}
+
+function renderCriticalAlerts(){
+  const criticals = MISMATCHES.filter(m=>m.risk_level==='CRITICAL');
+  document.getElementById('critical-alerts').innerHTML = criticals.map(m=>`
+    <div class="alert-item">
+      <div class="pulse-dot"></div>
+      <div style="flex:1">
+        <div style="font-size:12px;font-weight:600">${m.invoice_no} · ${m.mismatch_type}</div>
+        <div style="font-size:11px;color:#b91c1c;margin-top:2px">${m.root_cause}</div>
+        <div style="font-size:10px;color:var(--text-muted);font-family:'Space Mono',monospace">${m.supplier_gstin} · ${inr(m.itc_at_risk)} at risk</div>
+      </div>
+      <button class="btn btn-outline" style="font-size:10px;padding:5px 10px" onclick="openModal('${m.id}')">View Audit</button>
+    </div>`).join('');
+}
+
+// ══════════════ RECON TABLE ══════════════
+function renderReconTable(data){
+  document.getElementById('recon-body').innerHTML = data.map(m=>`
+    <tr>
+      <td class="mono">${m.invoice_no}</td>
+      <td class="mono" style="font-size:10px">${m.supplier_gstin}</td>
+      <td style="font-size:11px">${mismatchIcon(m.mismatch_type)} ${m.mismatch_type}</td>
+      <td class="mono">${inr(m.gstr1_value)}</td>
+      <td class="mono">${inr(m.gstr2b_value)}</td>
+      <td class="mono" style="color:var(--critical);font-weight:700">${inr(m.itc_at_risk)}</td>
+      <td class="mono">${m.period}</td>
+      <td>${riskBadge(m.risk_level)}</td>
+      <td>${statusBadge(m.status)}</td>
+      <td><button class="btn btn-outline" style="font-size:10px;padding:4px 8px" onclick="openModal('${m.id}')">Audit</button></td>
+    </tr>`).join('');
+}
+function filterReconTable(){
+  const search=document.getElementById('recon-search').value.toLowerCase();
+  const risk=document.getElementById('recon-risk-filter').value;
+  let data=MISMATCHES.filter(m=>{
+    const matchSearch = !search || m.invoice_no.toLowerCase().includes(search)||m.supplier_gstin.toLowerCase().includes(search);
+    const matchRisk = !risk || m.risk_level===risk;
+    return matchSearch && matchRisk;
+  });
+  renderReconTable(data);
+}
+
+// ══════════════ VENDOR TABLE ══════════════
+function renderVendorTable(data){
+  document.getElementById('vendor-body').innerHTML = data.map(v=>{
+    const col = riskColor(v.risk_category);
+    return `<tr>
+      <td><div class="risk-circle" style="background:${col}">${v.risk_score}</div></td>
+      <td><div style="font-size:12px;font-weight:600">${v.name}</div><div class="mono" style="font-size:10px;color:var(--text-muted)">${v.gstin}</div></td>
+      <td><div style="font-size:11px">${v.sector}</div><div style="font-size:10px;color:var(--text-muted)">${v.state}</div></td>
+      <td class="mono" style="color:${col}">${v.mismatch_count}</td>
+      <td class="mono" style="color:var(--critical)">${inr(v.itc_at_risk)}</td>
+      <td style="min-width:100px">
+        <div style="font-size:10px;margin-bottom:3px">${v.filing_streak}/24 months</div>
+        <div class="prog-bar"><div class="prog-fill prog-${v.risk_category.toLowerCase()}" style="width:${(v.filing_streak/24*100).toFixed(0)}%"></div></div>
+      </td>
+      <td>${riskBadge(v.risk_category)}</td>
+      <td style="font-size:10px;color:var(--text-muted);max-width:140px">${v.rec}</td>
+    </tr>`;}).join('');
+}
+function filterVendorTable(){
+  const cat=document.getElementById('vendor-risk-filter').value;
+  renderVendorTable(cat?VENDORS.filter(v=>v.risk_category===cat):VENDORS);
+}
+
+// ══════════════ ITC CHAIN HOP TREE ══════════════
+function renderHopTree(){
+  const el = document.getElementById('hop-tree');
+  el.innerHTML = ITC_CHAIN_HOPS.map(h=>{
+    const cls = h.status==='SAFE'?'hop-safe':h.status==='RISKY'?'hop-risky':'hop-warn';
+    const indent = h.hop * 20;
+    return `<div class="hop-node ${cls}" style="margin-left:${indent}px">
+      <div class="hop-badge" style="background:${h.color};color:#fff">H${h.hop}</div>
+      <div class="hop-info">
+        <div class="hop-name">${h.name}</div>
+        <div class="hop-gstin">${h.gstin}</div>
+        <div class="hop-itc" style="color:${h.color}">${inr(h.itc_value)}</div>
+        <div class="hop-note">${h.note}</div>
+      </div>
+    </div>`;}).join('');
+}
+
+// ══════════════ AUDIT LIST ══════════════
+let selectedAuditId = null;
+function renderAuditList(){
+  const el = document.getElementById('audit-list');
+  el.innerHTML = MISMATCHES.map(m=>`
+    <div class="audit-list-item" id="audit-li-${m.id}" onclick="selectAudit('${m.id}')">
+      <div class="mis-id">${m.id}</div>
+      <div class="mis-inv">${m.invoice_no}</div>
+      <div class="mis-type">${mismatchIcon(m.mismatch_type)} ${m.mismatch_type}</div>
+      <div style="margin-top:4px">${riskBadge(m.risk_level)}</div>
+    </div>`).join('');
+}
+function selectAudit(id){
+  document.querySelectorAll('.audit-list-item').forEach(el=>el.classList.remove('selected'));
+  document.getElementById('audit-li-'+id)?.classList.add('selected');
+  selectedAuditId = id;
+  const m = MISMATCHES.find(x=>x.id===id);
+  document.getElementById('audit-content').textContent = generateAuditText(m);
+}
+function copyAudit(){
+  const txt=document.getElementById('audit-content').textContent;
+  navigator.clipboard?.writeText(txt).then(()=>alert('Audit text copied to clipboard!'));
+}
+function downloadAudit(){
+  const txt=document.getElementById('audit-content').textContent;
+  const m = MISMATCHES.find(x=>x.id===selectedAuditId);
+  const fname = m?`audit-${m.invoice_no}.txt`:'audit-finding.txt';
+  const blob=new Blob([txt],{type:'text/plain'});
+  const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=fname;a.click();
+}
+
+// ══════════════ PREDICTION TABLE ══════════════
+function renderPredictTable(){
+  const el = document.getElementById('predict-table-body');
+  el.innerHTML = PREDICTIONS.map(p=>{
+    const trendColor = p.trend==='up'?'#ef4444':p.trend==='down'?'#22c55e':'#94a3b8';
+    const trendArrow = p.trend==='up'?'↑':p.trend==='down'?'↓':'→';
+    const delta = p.predicted - p.current;
+    const deltaStr = (delta>0?'+':'')+delta.toFixed(0);
+    return `<tr>
+      <td style="font-size:12px;padding:8px 10px">${p.name}<div style="font-size:10px;color:var(--text-muted);font-family:'Space Mono',monospace">${p.gstin}</div></td>
+      <td style="padding:8px 10px;font-family:'Space Mono',monospace;font-size:12px">${p.current}</td>
+      <td style="padding:8px 10px;font-family:'Space Mono',monospace;font-size:12px;font-weight:700;color:${trendColor}">${p.predicted}</td>
+      <td style="padding:8px 10px;font-size:14px;font-weight:700;color:${trendColor}">${trendArrow} <span style="font-size:11px">${deltaStr}</span></td>
+    </tr>`;}).join('');
+  const factors=[
+    {label:"Mismatch Ratio",weight:35,color:"#ef4444"},
+    {label:"Filing Behavior",weight:25,color:"#f97316"},
+    {label:"Network Contagion",weight:20,color:"#eab308"},
+    {label:"Critical Mismatches",weight:15,color:"#8b5cf6"},
+    {label:"Transaction Volume",weight:5,color:"#22c55e"}
+  ];
+  document.getElementById('risk-factors-list').innerHTML = factors.map(f=>`
+    <div style="margin-bottom:10px">
+      <div style="display:flex;justify-content:space-between;margin-bottom:3px">
+        <span style="font-size:11px;font-weight:600">${f.label}</span>
+        <span style="font-size:11px;font-family:'Space Mono',monospace">${f.weight}%</span>
+      </div>
+      <div class="prog-bar"><div class="prog-fill" style="width:${f.weight*2}%;background:${f.color}"></div></div>
+    </div>`).join('');
+}
+
+// ══════════════ AI INSIGHTS ══════════════
+function renderAIInsights(){
+  const top3 = PREDICTIONS.filter(p=>p.trend==='up').slice(0,3);
+  document.getElementById('ai-insights').innerHTML = top3.map(p=>`
+    <div class="insight-card">
+      <div class="insight-vendor">🤖 ${p.name} (${p.gstin})</div>
+      <div class="insight-text">
+        Graph analysis predicts this vendor's risk score will increase from 
+        <strong style="color:#f59e0b">${p.current}</strong> to 
+        <strong style="color:#ef4444">${p.predicted}</strong> next period.
+        Primary drivers: ${p.factors.join('; ')}.
+        Network contagion analysis shows connected vendors averaging 65+ risk score,
+        contributing additional exposure via Section 16(2)(c) propagation pathway.
+      </div>
+      <div class="insight-action">
+        Recommended Action: ${p.predicted>=80
+          ? '⛔ Proactively restrict ITC. Initiate vendor audit under Section 65 CGST Act.'
+          : '⚠️ Enhanced monitoring. Request compliance certificate before next supply.'}
+      </div>
+    </div>`).join('');
+}
+
+// ══════════════ SVG GRAPH ══════════════
+function renderSVG(){
+  const svg = document.getElementById('kg-svg');
+  const nodeMap = {};
+  GRAPH_NODES.forEach(n=>nodeMap[n.id]=n);
+  // Arrowhead marker
+  svg.innerHTML = `<defs>
+    <marker id="arr" viewBox="0 0 10 10" refX="15" refY="5" markerWidth="6" markerHeight="6" orient="auto">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#4a5568"/>
+    </marker>
+  </defs>`;
+  // Edges
+  GRAPH_EDGES.forEach(e=>{
+    const s=nodeMap[e.from],t=nodeMap[e.to];
+    if(!s||!t)return;
+    const line=document.createElementNS("http://www.w3.org/2000/svg","line");
+    line.setAttribute('x1',s.x);line.setAttribute('y1',s.y);
+    line.setAttribute('x2',t.x);line.setAttribute('y2',t.y);
+    line.setAttribute('stroke','#4a5568');line.setAttribute('stroke-width','1.5');
+    line.setAttribute('marker-end','url(#arr)');line.setAttribute('opacity','.7');
+    svg.appendChild(line);
+  });
+  // Nodes
+  GRAPH_NODES.forEach(n=>{
+    if(n.type==='Mismatch'){
+      const rect=document.createElementNS("http://www.w3.org/2000/svg","rect");
+      rect.setAttribute('x',n.x-22);rect.setAttribute('y',n.y-12);
+      rect.setAttribute('width','44');rect.setAttribute('height','24');
+      rect.setAttribute('rx','4');rect.setAttribute('fill','#ef4444');rect.setAttribute('opacity','.85');
+      svg.appendChild(rect);
+      const label=n.label.split('\n')[0];
+      const txt=document.createElementNS("http://www.w3.org/2000/svg","text");
+      txt.setAttribute('x',n.x);txt.setAttribute('y',n.y+4);
+      txt.setAttribute('text-anchor','middle');txt.setAttribute('fill','#fff');
+      txt.setAttribute('font-size','8');
+      txt.textContent=label;
+      svg.appendChild(txt);
+    } else {
+      const risk=n.risk||0;
+      const fill = risk>65?'#ef4444':risk>45?'#f97316':'#22c55e';
+      const circle=document.createElementNS("http://www.w3.org/2000/svg","circle");
+      circle.setAttribute('cx',n.x);circle.setAttribute('cy',n.y);circle.setAttribute('r','22');
+      circle.setAttribute('fill',fill);circle.setAttribute('opacity','.85');
+      svg.appendChild(circle);
+      const score=document.createElementNS("http://www.w3.org/2000/svg","text");
+      score.setAttribute('x',n.x);score.setAttribute('y',n.y+4);
+      score.setAttribute('text-anchor','middle');score.setAttribute('fill','#fff');
+      score.setAttribute('font-size','10');score.setAttribute('font-weight','bold');
+      score.textContent=risk;
+      svg.appendChild(score);
+      const lbl=document.createElementNS("http://www.w3.org/2000/svg","text");
+      lbl.setAttribute('x',n.x);lbl.setAttribute('y',n.y+36);
+      lbl.setAttribute('text-anchor','middle');lbl.setAttribute('fill','#94a3b8');
+      lbl.setAttribute('font-size','8');
+      lbl.textContent=n.name.substring(0,14);
+      svg.appendChild(lbl);
+    }
+  });
+}
+
+// ══════════════ CHARTS ══════════════
+function initCharts(){
+  // Risk donut
+  new Chart(document.getElementById('riskDonut'),{
+    type:'doughnut',
+    data:{labels:['CRITICAL','HIGH','MEDIUM','LOW'],datasets:[{data:[15,42,30,13],backgroundColor:['#ef4444','#f97316','#eab308','#22c55e'],borderWidth:2,borderColor:'#fff'}]},
+    options:{responsive:true,plugins:{legend:{position:'bottom',labels:{font:{family:'Sora'},padding:12}}}}
+  });
+  // ITC trend line
+  new Chart(document.getElementById('itcTrend'),{
+    type:'line',
+    data:{labels:['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug'],datasets:[{label:'ITC at Risk (₹)',data:[82000,95000,71000,118000,143000,99000,87000,165000],borderColor:'#f59e0b',backgroundColor:'rgba(245,158,11,.1)',fill:true,tension:.4,pointBackgroundColor:'#f59e0b'}]},
+    options:{responsive:true,plugins:{legend:{display:false}},scales:{y:{ticks:{callback:v=>'₹'+Math.round(v/1000)+'K',font:{family:'Space Mono',size:9}},grid:{color:'#f1f5f9'}},x:{ticks:{font:{family:'Space Mono',size:9}},grid:{display:false}}}}
+  });
+  // Resolution bar
+  new Chart(document.getElementById('resolutionBar'),{
+    type:'bar',
+    data:{labels:['PENDING','IN_PROGRESS','RESOLVED'],datasets:[{label:'Count',data:[6,3,1],backgroundColor:['#fde68a','#bfdbfe','#bbf7d0'],borderRadius:6}]},
+    options:{responsive:true,plugins:{legend:{display:false}},scales:{y:{ticks:{stepSize:1,font:{family:'Space Mono',size:9}},grid:{color:'#f1f5f9'}},x:{ticks:{font:{family:'Space Mono',size:9}},grid:{display:false}}}}
+  });
+  // Hop stacked bar
+  new Chart(document.getElementById('hopChart'),{
+    type:'bar',
+    data:{
+      labels:['Hop 0','Hop 1','Hop 2','Hop 3','Hop 4'],
+      datasets:[
+        {label:'ITC Eligible',data:[4520000,1850000,0,430000,210000],backgroundColor:'rgba(34,197,94,.7)',borderRadius:4},
+        {label:'ITC Blocked',data:[0,0,980000,0,0],backgroundColor:'rgba(239,68,68,.7)',borderRadius:4}
+      ]
+    },
+    options:{responsive:true,plugins:{legend:{position:'bottom',labels:{font:{family:'Sora',size:10}}}},scales:{x:{stacked:true,ticks:{font:{family:'Space Mono',size:9}},grid:{display:false}},y:{stacked:true,ticks:{callback:v=>'₹'+Math.round(v/100000)+'L',font:{family:'Space Mono',size:9}},grid:{color:'#f1f5f9'}}}}
+  });
+  // Vendor bar
+  new Chart(document.getElementById('vendorBarChart'),{
+    type:'bar',
+    data:{
+      labels:VENDORS.map(v=>v.name.substring(0,15)),
+      datasets:[{label:'Risk Score',data:VENDORS.map(v=>v.risk_score),backgroundColor:VENDORS.map(v=>riskColor(v.risk_category)),borderRadius:4}]
+    },
+    options:{indexAxis:'y',responsive:true,plugins:{legend:{display:false}},scales:{x:{max:100,ticks:{font:{family:'Space Mono',size:9}},grid:{color:'#f1f5f9'}},y:{ticks:{font:{family:'Sora',size:10}},grid:{display:false}}}}
+  });
+  // Prediction grouped bar
+  const cats=['CRITICAL','HIGH','MEDIUM','LOW'];
+  const currCounts=cats.map(c=>PREDICTIONS.filter(p=>{const v=VENDORS.find(x=>x.gstin===p.gstin);return v&&v.risk_category===c;}).length);
+  const predCounts=cats.map(c=>PREDICTIONS.filter(p=>{
+    const s=p.predicted;
+    const cat=s>=80?'CRITICAL':s>=60?'HIGH':s>=40?'MEDIUM':'LOW';
+    return cat===c;
+  }).length);
+  new Chart(document.getElementById('predGroupChart'),{
+    type:'bar',
+    data:{
+      labels:cats,
+      datasets:[
+        {label:'Current',data:currCounts,backgroundColor:'rgba(99,102,241,.7)',borderRadius:4},
+        {label:'Predicted',data:predCounts,backgroundColor:'rgba(245,158,11,.7)',borderRadius:4}
+      ]
+    },
+    options:{responsive:true,plugins:{legend:{position:'bottom',labels:{font:{family:'Sora',size:10}}}},scales:{x:{ticks:{font:{family:'Space Mono',size:9}},grid:{display:false}},y:{ticks:{stepSize:1,font:{family:'Space Mono',size:9}},grid:{color:'#f1f5f9'}}}}
+  });
+}
+
+// ══════════════ INIT ══════════════
+window.addEventListener('DOMContentLoaded',()=>{
+  renderTypeBreakdown();
+  renderCriticalAlerts();
+  renderReconTable(MISMATCHES);
+  renderHopTree();
+  renderVendorTable(VENDORS);
+  renderAuditList();
+  renderPredictTable();
+  renderAIInsights();
+  renderSVG();
+  setTimeout(initCharts, 100);
+});
+</script>
+</body>
+</html>
+

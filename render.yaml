@@ -1,0 +1,12 @@
+services:
+  - type: web
+    name: graphledger-ai-backend
+    runtime: python
+    rootDir: gst_engine
+    buildCommand: pip install -r requirements.txt && python data_generator.py
+    startCommand: uvicorn api:app --host 0.0.0.0 --port $PORT
+    envVars:
+      - key: GROQ_API_KEY
+        sync: false   # Set this manually in Render dashboard
+      - key: PYTHON_VERSION
+        value: 3.11.0
