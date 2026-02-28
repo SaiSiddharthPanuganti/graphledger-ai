@@ -424,7 +424,7 @@ def generate_payments(invoices: list[dict]) -> list[dict]:
     return payments
 
 
-
+def generate_returns(taxpayers: list[dict], invoices: list[dict]) -> list[dict]:
     """Generate GSTR-1, GSTR-2B, GSTR-3B entries per taxpayer per period."""
     returns = []
     inv_by_supplier: dict = {}
